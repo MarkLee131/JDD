@@ -2065,7 +2065,7 @@
         ]
       },
       "indexMax": -2,
-      "methodSig": "\u003cjava.lang.reflect.Method: java.Glang.String getName()\u003e",
+      "methodSig": "\u003cjava.lang.reflect.Method: java.lang.String getName()\u003e",
       "extendFlag": true,
       "methodSigs": [],
       "needInfluenceCheck": false,
