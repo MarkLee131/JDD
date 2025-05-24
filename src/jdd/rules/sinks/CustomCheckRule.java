@@ -41,6 +41,8 @@ public class CustomCheckRule extends AbstractCheckRule{
         customRulesMap.put("Bsh", new HashSet<>());
         customRulesMap.get("Bsh").add("<bsh.BshMethod: java.lang.Object invoke(java.lang.Object[],bsh.Interpreter,bsh.CallStack,bsh.SimpleNode)>");
         customRulesMap.get("Bsh").add("<bsh.BshMethod: java.lang.Object invoke(java.lang.Object[],bsh.Interpreter,bsh.CallStack,bsh.SimpleNode,boolean)>");
+        customRulesMap.get("Bsh").add("<bsh.This: java.lang.Object invokeMethod(java.lang.String,java.lang.Object[],bsh.Interpreter,bsh.CallStack,bsh.SimpleNode,boolean)>");
+        customRulesMap.get("Bsh").add("<bsh.This: java.lang.Object invokeMethod(java.lang.String,java.lang.Object[])>");
         // Myface
         customRulesMap.put("Myface", new HashSet<>());
         customRulesMap.get("Myface").add("<javax.el.ValueExpression: java.lang.Object getValue(javax.el.ELContext)>");
@@ -70,6 +72,7 @@ public class CustomCheckRule extends AbstractCheckRule{
     public boolean checkRisky(MethodDescriptor descriptor, TransformableNode tfNode){
         boolean risky = false;
         for (String cumMark : customRulesMap.keySet()){
+            if (risky)  break;
             switch (cumMark){
                 case "groovy":
                     if (checkRiskyForGroovy(cumMark, descriptor, tfNode)) {
@@ -204,6 +207,23 @@ public class CustomCheckRule extends AbstractCheckRule{
                 if (risky) {
                     risky = RecordUtils.recordTaintedArgs(descriptor, taintedValues, sinkType, tfNode);
                 }
+            }else if (methodSig.contains("invokeMethod")){
+                ValueBox thisValueBox = Parameter.getThisValueBox(tfNode.node);
+                Value argValue_0 = invokeExpr.getArg(0);
+                Value argValue_1 = invokeExpr.getArg(1);
+
+                if (argValue_0 == null || argValue_1 == null || thisValueBox == null)
+                    return false;
+
+                HashSet<Value> taintedValues = new HashSet<>();
+                taintedValues.add(thisValueBox.getValue());
+                taintedValues.add(argValue_0);
+                taintedValues.add(argValue_1);
+
+                risky = Utils.isTainted(argValue_0, descriptor.taints) && Utils.isTainted(argValue_1, descriptor.taints);
+                if (risky) {
+                    risky = RecordUtils.recordTaintedArgs(descriptor, taintedValues, sinkType, tfNode);
+                }
             }
         }
         return risky;
@@ -265,6 +285,8 @@ public class CustomCheckRule extends AbstractCheckRule{
                 }else if (methodSig.contains("bsh.Reflect:")){
                     controllableParams.add(0);
                     controllableParams.add(1);
+                }else if (methodSig.contains("invokeMethod")){
+                    controllableParams.add(-1);
                 }
                 break;
             case "Myface":

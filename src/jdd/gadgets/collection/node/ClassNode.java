@@ -31,7 +31,8 @@ public class ClassNode {
     public boolean isProxy = false; // 标记是否为动态代理类
     public SootMethod triggerMethod = null; // 触发动态代理的方法
     // 对于动态代理类节点, 标记其 Invocation Handler 类节点
-    public ClassNode invocationHandlerClassNode = null;
+    // 记录该动态代理实例对象需要继承的接口
+    public HashSet<SootClass> interfacesOfDynamicProxyInstance = new HashSet<>();
 
     public boolean flag = true;
 
@@ -43,8 +44,11 @@ public class ClassNode {
         this.sootClass = sootClass;
         this.source = source;
         this.gadgetInfoRecord = gadgetInfoRecord;
-        if (candidateSources.size() > 1)
+        if (candidateSources.size() > 1) {
             this.candidateSources = candidateSources;
+        }
+        interfacesOfDynamicProxyInstance.add(sootClass);
+        interfacesOfDynamicProxyInstance.add(this.source.getClassOfType());
     }
 
     public ClassNode(SootClass sootClass, GadgetInfoRecord gadgetInfoRecord){
@@ -52,6 +56,10 @@ public class ClassNode {
         this.gadgetInfoRecord = gadgetInfoRecord;
     }
 
+    public void markDynamicProxyInstance(SootMethod triggerMethod) {
+        this.isProxy = true;
+        this.triggerMethod = triggerMethod;
+    }
 
     public void addGadgetNode(GadgetNode newGadgetNode) {
         boolean inGadgetChain = this.gadgetInfoRecord.gadgets.contains(newGadgetNode.sootMethod);

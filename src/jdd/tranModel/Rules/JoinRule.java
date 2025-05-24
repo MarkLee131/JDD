@@ -41,9 +41,9 @@ public class JoinRule implements Rule {
         }
         tfNode.path_record.addAll(path_record);
 
-//        if (BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING_SINGLE) && BasicDataContainer.openDynamicProxyDetect){
-//            recordPath(tfNode);
-//        }
+        if (BasicDataContainer.stage.equals(Stage.DYNAMIC_PROXY_FRAGMENT_GENERATING) && BasicDataContainer.openDynamicProxyDetect){
+            recordPath(tfNode);
+        }
     }
 
     public void recordPath(TransformableNode tfNode){
@@ -54,7 +54,7 @@ public class JoinRule implements Rule {
             Stmt target = ifStmt.getTarget();
 
 //            TransformableNode.ifStmtHashMap.put(ifStmt.hashCode(),transformableNode);
-            BasicDataContainer.conditionTfNodesMap.put(ifStmt.hashCode(), tfNode);
+            BasicDataContainer.conditionTfNodesMap.put(ifStmt.hashCode(), tfNode); // 记录条件语句
 
             for (TransformableNode success: tfNode.successors){
                 if (((Stmt)success.node.unit).equals(target) ){

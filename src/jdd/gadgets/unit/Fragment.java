@@ -2,7 +2,8 @@ package gadgets.unit;
 
 import PointToAnalyze.pointer.Pointer;
 import dataflow.DataFlowAnalysisUtils;
-import soot.SootClass;
+import dataflow.node.SourceNode;
+import soot.*;
 import tranModel.Rules.RuleUtils;
 import cfg.Node;
 import config.RegularConfig;
@@ -12,9 +13,6 @@ import dataflow.node.MethodDescriptor;
 import lombok.Getter;
 import lombok.Setter;
 import markers.SinkType;
-import soot.SootMethod;
-import soot.Value;
-import soot.ValueBox;
 import soot.jimple.InvokeExpr;
 import soot.jimple.Stmt;
 import tranModel.TransformableNode;
@@ -24,6 +22,7 @@ import util.Utils;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 
 import static tranModel.Rules.RuleUtils.sanitizerArrayElement;
@@ -42,7 +41,7 @@ public class Fragment {
     public FRAGMENT_STATE state = null;
     public enum FRAGMENT_TYPE{POLYMORPHISM, DYNAMIC_PROXY, REFLECTION} // 跟进head判断
     public FRAGMENT_TYPE type = null;
-
+    public LinkedList<FRAGMENT_TYPE> fragmentTypes = new LinkedList<>(); // 记录整个chain中所有的 fragment types
     public SinkType sinkType = null;
 
     public SootMethod head = null; // 起始方法, 记录具体实现
@@ -52,6 +51,7 @@ public class Fragment {
     public HashSet<SootMethod> endInvokableMethods = null;
 
     public TransformableNode invokeNode = null;
+    public SourceNode directSource = null; // 直接的污点来源，非通过污点传播的来源
     public LinkedList<SootMethod> gadgets = new LinkedList<>();
 
     public HashMap<Integer, HashSet<HashSet<Integer>>> endToHeadTaints = new HashMap<>();
@@ -98,6 +98,10 @@ public class Fragment {
     }
 
     public Fragment(Fragment preFragment, Fragment sucFragment){
+        if (sucFragment.state.equals(FRAGMENT_STATE.SOURCE)){
+            flag = false;
+            return;
+        }
         boolean isEqualsConnectFlag = false;
         if (RuleUtils.isEqMethod(preFragment.head)
                 && RuleUtils.isEqMethod(sucFragment.head)){
@@ -124,15 +128,25 @@ public class Fragment {
             if (requires.isEmpty())
                 requires.add(0);
         }
+        // 其他拼接条件检测
+        if (!preFragment.connectRequire.satisfyDynamicProxyFragmentLinkCondition(preFragment.end.getName(),
+                preFragment.end.getDeclaringClass().getName(), preFragment)){
+            flag = false;
+            return;
+        }
 
         this.connectRequire = new ConnectRequire(paramsTaitRequires, preFragment.connectRequire.preLinkableMethods);
-        this.connectRequire.dynamicProxyLinkCheck = preFragment.connectRequire.dynamicProxyLinkCheck;
+        this.connectRequire.dynamicProxyLinkCheck = sucFragment.connectRequire.dynamicProxyLinkCheck;
         this.connectRequire.reflectionCheck = preFragment.connectRequire.reflectionCheck;
 
-
-        type = sucFragment.type;
+        if (!sucFragment.type.equals(FRAGMENT_TYPE.DYNAMIC_PROXY))
+            type = sucFragment.type;
+        else if (preFragment.state.equals(FRAGMENT_STATE.SOURCE))
+            type = sucFragment.type;
+        else type = preFragment.type;
+        this.fragmentTypes.add(type);
+        this.fragmentTypes.addAll(sucFragment.fragmentTypes);
         sinkType = sucFragment.sinkType;
-
 
         LinkedList<SootMethod> gadgets = new LinkedList<>(preFragment.gadgets);
         gadgets.addAll(sucFragment.gadgets);
@@ -177,6 +191,22 @@ public class Fragment {
 
         initForPolymorphism(descriptor);
         recordProxyRequires(descriptor);
+        recordBasicInfos(descriptor);
+        this.fragmentTypes.add(type);
+    }
+
+    public void recordBasicInfos(MethodDescriptor descriptor){
+        // 记录对 end 的调用是否有直接的污染来源
+        ValueBox thisValueBox = Parameter.getThisValueBox(invokeNode.node);
+        if (thisValueBox != null){
+            this.directSource = descriptor.getFieldSourceNode(this.invokeNode.node, thisValueBox);
+//            SootField sootField = descriptor.getFieldDirectly(invokeNode.node, thisValueBox);
+//            if (sootField != null) {
+//                LinkedList<SootField> fields = new LinkedList<>();
+//                fields.add(sootField);
+//                this.directSource = new SourceNode(fields, descriptor.getCurrentClass());
+//            }
+        }
     }
 
     public Fragment copy(Fragment fragment){
@@ -277,21 +307,23 @@ public class Fragment {
     }
 
     public void extractProxyInfos(MethodDescriptor descriptor){
-        TransformableNode nextTfNode = RecordUtils.findTfNodeToNextMtd(descriptor, gadgets);
+        LinkedHashSet<TransformableNode> nextTfNodes = descriptor.pathRecord.getInvokeTransforms(gadgets, end);
+        nextTfNodes.add(this.invokeNode);
+        for (TransformableNode nextTfNode: nextTfNodes) {
+            HashSet<Integer> path_record = nextTfNode.path_record;
+            for (Integer hashCode : path_record) {
+                if (path_record.contains(-hashCode))
+                    continue;
 
-        HashSet<Integer> path_record = nextTfNode.path_record;
-        for (Integer hashCode : path_record){
-            if (path_record.contains(-hashCode))
-                continue;
-
-            TransformableNode addIfStmt = TransformableNode.ifStmtHashMap.get(hashCode > 0 ? hashCode:-hashCode);
-            if (addIfStmt == null)  continue;
-            // 必要条件分支hashCode，便于进行后续的分支敏感验证
-            connectRequire.condSet.add(hashCode);
+                TransformableNode addIfStmt = BasicDataContainer.conditionTfNodesMap.get(hashCode > 0 ? hashCode : -hashCode);
+                if (addIfStmt == null) continue;
+                // 必要条件分支hashCode，便于进行后续的分支敏感验证
+                connectRequire.parseAndAddDynamicProxyLinkCondition(addIfStmt, hashCode>0);
 //            RecordUtils.extractMethodName(nextTfNode, descriptor);
+            }
         }
     }
-
+    // 生成 end-to-head taints mapping
     public void setTaintsDependence(MethodDescriptor descriptor, Node invokeNode){
 //        MethodDescriptor descriptor = BasicDataContainer.getOrCreateDescriptor(this.invokeNode.method);
 //        descriptor = BasicDataContainer.getOrCreateDescriptor(gadgets.getLast());
@@ -367,6 +399,10 @@ public class Fragment {
 
         Fragment fragment = (Fragment) object;
         return gadgets.equals(fragment.gadgets) & end.equals(fragment.end);
+    }
+
+    public int hashCode(){
+        return gadgets.hashCode()^3 + end.hashCode();
     }
 
     public void calPrioritySimply(){

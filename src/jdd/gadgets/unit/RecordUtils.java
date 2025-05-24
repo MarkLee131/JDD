@@ -1,6 +1,7 @@
 package gadgets.unit;
 
 import cfg.Node;
+import container.BasicDataContainer;
 import gadgets.collection.node.ConditionUtils;
 import soot.SootMethod;
 import soot.ValueBox;
@@ -18,10 +19,7 @@ import soot.Value;
 import util.StaticAnalyzeUtils.FieldUtil;
 import util.StaticAnalyzeUtils.Parameter;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 import static dataflow.DataFlow.findAllDefUnitAffectThisValue;
 import static tranModel.Rules.RuleUtils.checkTransientControllableSimply;
@@ -61,6 +59,9 @@ public class RecordUtils {
 
         if (!descriptor.sinkUnitsRecord.containsKey(sinkType))
             descriptor.sinkUnitsRecord.put(sinkType, new HashMap<>());
+//        if (!descriptor.sinkUnitsRecord.get(sinkType).containsKey(tfNode))
+//            descriptor.sinkUnitsRecord.get(sinkType).put(tfNode, new HashSet<>());
+//        descriptor.sinkUnitsRecord.get(sinkType).get(tfNode).addAll(paramSources);
         descriptor.sinkUnitsRecord.get(sinkType).put(tfNode, paramSources);
 
         return true;
@@ -72,6 +73,38 @@ public class RecordUtils {
         if (callStack.size() < index + 1)
             return null;
         SootMethod nextMtd = callStack.get(index + 1);
+
+        List<TransformableNode> topologicalOrder = TranUtil.getTopologicalOrderedTNodesFromCFG(descriptor.cfg);
+        for (TransformableNode tmpTfNode: topologicalOrder){
+            if (!tmpTfNode.containsInvoke())
+                continue;
+            SootMethod tmpNextMtd = tmpTfNode.getUnitInvokeExpr().getMethod();
+            if (tmpNextMtd.getSubSignature().equals(nextMtd.getSubSignature()))
+                return tmpTfNode;
+        }
+        return null;
+    }
+
+    public static LinkedHashSet<TransformableNode> findIfNodesForChain(MethodDescriptor descriptor, LinkedList<SootMethod> callStack){
+        LinkedHashSet<TransformableNode> ifNodes = new LinkedHashSet<>();
+        for (int index = 0; index < callStack.size()-1; index++){
+            SootMethod mtd = callStack.get(index);
+            TransformableNode ifTfNode = findTfNodeToNextMtd(mtd, callStack);
+            if (ifTfNode != null)
+                ifNodes.add(ifTfNode);
+        }
+
+        return ifNodes;
+    }
+
+
+    public static TransformableNode findTfNodeToNextMtd(SootMethod sootMethod,
+                                                        LinkedList<SootMethod> callStack){
+        int index = callStack.indexOf(sootMethod);
+        if (callStack.size() < index + 1)
+            return null;
+        SootMethod nextMtd = callStack.get(index + 1);
+        MethodDescriptor descriptor = BasicDataContainer.getOrCreateDescriptor(sootMethod);
 
         List<TransformableNode> topologicalOrder = TranUtil.getTopologicalOrderedTNodesFromCFG(descriptor.cfg);
         for (TransformableNode tmpTfNode: topologicalOrder){

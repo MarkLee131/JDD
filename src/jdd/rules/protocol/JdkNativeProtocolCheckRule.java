@@ -1,11 +1,13 @@
 package rules.protocol;
 
 import config.RegularConfig;
+import container.BasicDataContainer;
 import lombok.extern.slf4j.Slf4j;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
 import util.ClassRelationshipUtils;
+import util.Utils;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -37,11 +39,13 @@ public class JdkNativeProtocolCheckRule extends AbstractProtocolCheckRule {
         SootMethod equalMtd = Scene.v().getMethod("<java.lang.Object: boolean equals(java.lang.Object)>");
         // 根据该协议的逻辑提取source methods
         for (SootClass sootClass: candidateClassSet){
+            if (!Utils.isJdkInnerClass(sootClass))   continue;
             sourceMethods.addAll(ClassRelationshipUtils.getMethods(sootClass,entryMethods));
-
-            SootMethod equalsMtd = getMethodOfClassAndSuper(sootClass, equalMtd.getSubSignature());
-            if (equalsMtd != null)
-                this.fsMtds.add(equalsMtd);
+            if (!BasicDataContainer.openDynamicProxyDetect) {
+                SootMethod equalsMtd = getMethodOfClassAndSuper(sootClass, equalMtd.getSubSignature());
+                if (equalsMtd != null)
+                    this.fsMtds.add(equalsMtd);
+            }
         }
 
         this.sources = sourceMethods;

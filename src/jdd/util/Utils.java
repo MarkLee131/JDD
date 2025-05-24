@@ -331,8 +331,8 @@ public class Utils {
         return false;
     }
 
-    public static boolean isJdkInnerMethod(SootMethod sootMethod){
-        String className = sootMethod.getDeclaringClass().getName();
+    public static boolean isJdkInnerClass(SootClass sootClass){
+        String className = sootClass.getName();
         if (className.startsWith("java."))
             return true;
         if (className.startsWith("javax."))
@@ -365,6 +365,9 @@ public class Utils {
                 | className.startsWith("org.xml.sax"))
             return true;
         return false;
+    }
+    public static boolean isJdkInnerMethod(SootMethod sootMethod){
+        return isJdkInnerClass(sootMethod.getDeclaringClass());
     }
 
     /**

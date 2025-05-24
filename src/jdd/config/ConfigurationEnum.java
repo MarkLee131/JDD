@@ -14,6 +14,7 @@ public enum ConfigurationEnum {
     JSON_SOURCE_TYPE("jsonSourceType"),
     METHOD_LIMIT_NUM("methodLimitNum"),
     OPEN_DYNAMIC_PROXY("openDynamicProxy"),
+    PRE_DYNAMIC_PROXY_FRAGMENT_LIMIT("preDynamicProxyFragmentLimit"),
     EXECUTION_TIME_LIMIT("executionTimeLimit"),
     RE_RUN_LIMIT_NUM("reRunLimitNum"),
     Heuristic_Short_Chain_Cut_Len("heuristicShortChainCutLen"),

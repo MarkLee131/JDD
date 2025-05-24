@@ -22,7 +22,9 @@ import java.util.*;
 public class AnalyzeUtils {
 
     public static SootMethod getNextMethod(LinkedList<SootMethod> callStack, LinkedList<SootMethod> methodStack){
+        // 先判断是否为动态代理跳转
         SootMethod ret = null;
+        if (ret != null)    return ret;
         SootMethod curMtd = callStack.getLast();
         if (Utils.isSubList(callStack, methodStack) & curMtd != null){
             int index = methodStack.indexOf(curMtd);

@@ -3,6 +3,7 @@ package dataflow.node;
 import DefaultDetector.DefaultMethodDescriptor;
 import PointToAnalyze.pointer.PointTable;
 import PointToAnalyze.pointer.Pointer;
+import gadgets.unit.PathRecord;
 import tranModel.Taint.Taint;
 import tranModel.TransformableNode;
 import cfg.CFG;
@@ -59,6 +60,7 @@ public class MethodDescriptor extends DefaultMethodDescriptor {
     public HashMap<SinkType, HashMap<TransformableNode, HashSet<SourceNode>>> sinkUnitsRecord = new HashMap<>();
 
     public HashSet<Value> tempGeneratedObjs = new HashSet<>();
+    public PathRecord pathRecord = new PathRecord();
 
 
     public MethodDescriptor(SootMethod method) {

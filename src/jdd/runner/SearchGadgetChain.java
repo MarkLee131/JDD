@@ -41,6 +41,7 @@ public class SearchGadgetChain implements Callable<String> {
                 state = task.get();
             } catch (Exception e){
                 log.error("Error Report: " + e.getMessage());
+                e.printStackTrace();
                 if(times > RegularConfig.executionTimeLimit){ break; }
             }finally {
                 BasicDataContainer.reset();

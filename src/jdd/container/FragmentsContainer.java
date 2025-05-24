@@ -92,8 +92,9 @@ public class FragmentsContainer {
         Utils.printTimeConsume(endTime1, startTime);
 
         if (!RegularConfig.protocol.equals("json")
-                & !RegularConfig.derivationType.equals("SecondDesDerivation")
-                & !RegularConfig.derivationType.equals("InvokeDerivation")) {
+                && !RegularConfig.derivationType.equals("SecondDesDerivation")
+                && !RegularConfig.derivationType.equals("InvokeDerivation")
+                && !BasicDataContainer.openDynamicProxyDetect) {
             setDetectSchemeOn(); // 设置开始检测的 flag
             protocolCheckRule.filterFixedEqualsMethods();
             setDetectSchemeOff(); // 设置开始检测的 flag
@@ -105,8 +106,22 @@ public class FragmentsContainer {
         for (Fragment.FRAGMENT_TYPE type: Fragment.FRAGMENT_TYPE.values())
             typeFragmentsMap.put(type, new LinkedHashSet<>());
 
-        // 为 dynamic proxy fragments (这部分需要做一个轻量级的路径敏感) TODO: 暂时未并入
-//        generateInvocationHandlerFragments();
+        // 为 dynamic proxy fragments (这部分需要做一个轻量级的路径敏感)
+        generateInvocationHandlerFragments();
+    }
+
+    private static void generateInvocationHandlerFragments() {
+        setDetectSchemeOn(); // 设置开始检测的 flag
+        BasicDataContainer.stage = Stage.DYNAMIC_PROXY_FRAGMENT_GENERATING;
+        SootMethod dynamicProxyHeadInterface = BasicDataContainer.commonMtdMap.get("invokeHandler");
+        for (SootMethod proxyHead: ClassRelationshipUtils.getAllSubMethods(dynamicProxyHeadInterface)){
+//            if(!proxyHead.getSignature().equals("<bsh.XThis$Handler: java.lang.Object invoke(java.lang.Object,java.lang.reflect.Method,java.lang.Object[])>"))
+//                continue;
+            if(!proxyHead.getDeclaringClass().getName().equals("org.codehaus.groovy.runtime.ConversionHandler"))
+                continue;
+            SearchGadgetChains.dynamicProxyFragmentGen(proxyHead, null);
+        }
+        setDetectSchemeOff();
     }
 
     public static void reset(){
@@ -171,6 +186,14 @@ public class FragmentsContainer {
                 }
                 ret.add(recordedSinkFragment);
             }
+            // 对于 dynamic proxy fragment, 存在特殊的拼接方式
+            if (recordedSinkFragment.type.equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY) && freeStateFragment.end.getDeclaringClass().isInterface()){
+                String methodName = freeStateFragment.end.getName();
+                String className = freeStateFragment.end.getDeclaringClass().getName();
+                if (recordedSinkFragment.connectRequire.satisfyDynamicProxyFragmentLinkCondition(methodName, className, freeStateFragment)){
+                    ret.add(recordedSinkFragment);
+                }
+            }
         }
         return ret;
     }
@@ -219,7 +242,9 @@ public class FragmentsContainer {
         assert invokedMethod != null & tfNode.containsInvoke();
         HashSet<Fragment> newSinkFragments = new HashSet<>();
 
-        if (!(BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING) || BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING_SINGLE))
+        if (!(BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING)
+                || BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING_SINGLE)
+                || BasicDataContainer.stage.equals(Stage.DYNAMIC_PROXY_FRAGMENT_GENERATING))
                 || (!protocolCheckRule.openBPLink() && !isSinkFlag))
             return newSinkFragments;
 
@@ -325,13 +350,16 @@ public class FragmentsContainer {
 
         if (fragment.isFlag()) {
             stateFragmentsMap.get(fragment.state).add(fragment);
-            if (fragment.type != null)
+            if (fragment.type != null) {
                 typeFragmentsMap.get(fragment.type).add(fragment);
+                if (fragment.type.name().equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY.name()))
+                    dynamicProxyFragments.add(fragment);
+            }
             if (fragment.state.equals(SINK)){
                 sinkFragments.add(fragment);
             }
 
-            SootMethod invokedSuperMethod = ClassRelationshipUtils.getTopSuperMethod(invokedMethod);
+/*            SootMethod invokedSuperMethod = ClassRelationshipUtils.getTopSuperMethod(invokedMethod);
             if (isDynamicMethod(invokedMethod) && !dynamicMtds.contains(invokedSuperMethod)) {
                 HashSet<SootMethod> subMethods = ClassRelationshipUtils.getAllSubMethods(invokedSuperMethod);
                 HashSet<SootMethod> toDelete = new HashSet<>();
@@ -359,7 +387,7 @@ public class FragmentsContainer {
                 dynSubMtdsMap.put(invokedSuperMethod, subMethods);
 
                 sources.addAll(subMethods);
-            }
+            }*/
         }
     }
 
@@ -459,15 +487,20 @@ public class FragmentsContainer {
             HashSet<Integer> tmpParamsTaintRequire = new HashSet<>();
             HashMap<TransformableNode, HashSet<SourceNode>> map = descriptor.sinkUnitsRecord.get(sinkType);
             if (map != null) {
-                if (map.containsKey(tfNode)) {
-                    for (SourceNode sourceNode : map.get(tfNode)) {
-                        if (sourceNode.isParameter())
-                            tmpParamsTaintRequire.add(sourceNode.ind);
-                    }
-                }
-
                 fragment.connectRequire.paramsTaitRequire = new HashSet<>();
-                fragment.connectRequire.paramsTaitRequire.add(tmpParamsTaintRequire);
+                if (fragment.type.equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY)){
+                    HashSet<Integer> taintRequire = new HashSet<>();
+                    taintRequire.add(-1);
+                    fragment.connectRequire.paramsTaitRequire.add(taintRequire);
+                }else {
+                    if (map.containsKey(tfNode)) {
+                        for (SourceNode sourceNode : map.get(tfNode)) {
+                            if (sourceNode.isParameter())
+                                tmpParamsTaintRequire.add(sourceNode.ind);
+                        }
+                    }
+                    fragment.connectRequire.paramsTaitRequire.add(tmpParamsTaintRequire);
+                }
                 sinkFragments.add(fragment);
                 stateFragmentsMap.get(SINK).add(fragment);
                 if (!SOURCE.equals(fragment.state)) {
@@ -563,11 +596,16 @@ public class FragmentsContainer {
                 gadgetInfoRecord.dynamicProxyInvokeRecord.put(preFragment.end, basicFragment.head);
             }
         }
-        if (sinkFragment.linkedFragments.size() > 0) {
+        if (!sinkFragment.linkedFragments.isEmpty()) {
             Fragment lastFragment = basicFragmentsMap.get(sinkFragment.linkedFragments.getLast());
             if (lastFragment == null)
                 return null;
             if (!linkedFragments.contains(lastFragment)) linkedFragments.add(lastFragment);
+            if (Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY.equals(lastFragment.type)){
+                Fragment preFragment = basicFragmentsMap.get(sinkFragment.linkedFragments.get(sinkFragment.linkedFragments.size()-2));
+                assert gadgetInfoRecord.gadgets.contains(lastFragment.head) & gadgetInfoRecord.gadgets.contains(preFragment.end);
+                gadgetInfoRecord.dynamicProxyInvokeRecord.put(preFragment.end, lastFragment.head);
+            }
         }
         if (!detectAndRecordHashCollision(gadgetInfoRecord, linkedFragments)){
             return null;
@@ -575,6 +613,7 @@ public class FragmentsContainer {
 
         gadgetInfoRecord.linkedFragments = linkedFragments;
         gadgetInfoRecordMap.put(sinkFragment, gadgetInfoRecord);
+        gadgetInfoRecord.setCurFragment(linkedFragments.getFirst());
         return gadgetInfoRecord;
     }
 

@@ -39,11 +39,7 @@ public class TransformableNode extends Transformable{
     public boolean exec = true;
     // 用于路径敏感分析
     public HashSet<Integer> path_record = new HashSet<>();
-
     public boolean needInputTaintedParamFlush = true;
-
-    public static HashMap<Integer, TransformableNode> ifStmtHashMap = new HashMap<>();
-
 
     public TransformableNode(Node node, SootMethod sootMethod){
         this.node = node;

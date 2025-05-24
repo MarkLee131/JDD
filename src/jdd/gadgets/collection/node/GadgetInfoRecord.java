@@ -54,11 +54,13 @@ public class GadgetInfoRecord {
 
     // TODO: 用来记录 动态代理方法跳转 [触发动态代理 Invocation Handler 的方法, 动态代理的 Invocation Handler 方法]
     public LinkedHashMap<SootMethod, SootMethod> dynamicProxyInvokeRecord = new LinkedHashMap<>();
-
+    public Fragment curFragment;
+    public Integer fragmentIndex;
     public CollisionNode collisionNode = null;
 
     public boolean inImplicitClassFlag = false;
     public int hashCollisionReview = -1; // -1, 0, 1
+    public Boolean isNextDynamicProxyGadget = false;
 
     public GadgetInfoRecord(Fragment sinkFragment, SinkType sinkType) {
         this.fragment = sinkFragment;
@@ -158,6 +160,12 @@ public class GadgetInfoRecord {
         }
         return null;
     }
+
+//    public ClassNode getPossibleClassNode(SootClass sootClass) {
+//        if (classFieldsGraph.containsKey(sootClass))
+//            return classFieldsGraph.get(sootClass);
+//
+//    }
 
     public ClassNode getLastClassNode(LinkedList<SootMethod> callStack) {
         SootClass lastClass = Utils.getRealClass(callStack.getFirst());
@@ -331,20 +339,16 @@ public class GadgetInfoRecord {
     }
 
     public void recordConstantsInMethod(){
-
     }
 
     public void recordConstantsOfFields(){
-
     }
 
     public void recordForward(TransformableNode tfNode, MethodDescriptor descriptor){
         // 记录fields的使用信息
         recordUsedFields(tfNode, descriptor);
         // 记录方法/class中出现过的常量信息
-
     }
-
     /**
      * 创建新的 ClassNode, 并建立和已有 ClassNode 之间的关系
      *
@@ -367,7 +371,6 @@ public class GadgetInfoRecord {
             if (fieldSources.isEmpty()) return null;
         }
         if (thisValueBox != null && !Utils.isCompleteTainted(thisValueBox.getValue(), descriptor.taints))   return null;
-
         ClassNode curClassNode = getClassNode(curClass);
         if (curClassNode == null)
             return null;
@@ -375,40 +378,44 @@ public class GadgetInfoRecord {
         SootClass tmpFieldTypeOfClass = AnalyzeUtils.getActualFieldClassFollowsCallStack(descriptor.sootMethod, gadgets);
         SootClass fieldTypeOfClass = tmpFieldTypeOfClass == null ?
                 invokedDescriptor.sootMethod.getDeclaringClass() : tmpFieldTypeOfClass;
-
         SootClass actualClass = null;
         SourceNode fieldSourceNode = null;
         InvokeExpr invokeExpr = tfNode.getUnitInvokeExpr();
         boolean flag = false;
         HashSet<SourceNode> valuesOfObjectType = new HashSet<>();
-
         if (fieldSources.isEmpty()) fieldSources = RuleUtils.getTaintedFieldSourceNodesViaHeuristic(
-                    thisValueBox, invokeExpr, fieldTypeOfClass, tfNode, callStack, descriptor, curClassNode,this
-            );
-        for (SourceNode tmpFieldSourceNode : fieldSources) {
-            SootClass tmpSourceFieldTypeOfClass = Utils.toSootClass(tmpFieldSourceNode.getType());
-            if (tmpSourceFieldTypeOfClass == null)
-                continue;
+                thisValueBox, invokeExpr, fieldTypeOfClass, tfNode, callStack, descriptor, curClassNode, this);
+        if (fieldSources.isEmpty()) fieldSources = descriptor.sourcesTaintGraph.matchTaintedSources(thisValueBox.getValue());
+        if (!this.isNextDynamicProxyGadget) {
+            for (SourceNode tmpFieldSourceNode : fieldSources) {
+                SootClass tmpSourceFieldTypeOfClass = Utils.toSootClass(tmpFieldSourceNode.getType());
+                if (tmpSourceFieldTypeOfClass == null)
+                    continue;
 
-            if (tmpSourceFieldTypeOfClass.equals(fieldTypeOfClass)) {
-                flag = true;
-                actualClass = fieldTypeOfClass;
-                fieldSourceNode = tmpFieldSourceNode;
-                break;
+                if (tmpSourceFieldTypeOfClass.equals(fieldTypeOfClass)) {
+                    flag = true;
+                    actualClass = fieldTypeOfClass;
+                    fieldSourceNode = tmpFieldSourceNode;
+                    break;
+                }
+                if (ClassUtils.getAllSupers(fieldTypeOfClass).contains(tmpSourceFieldTypeOfClass)
+                        & !tmpSourceFieldTypeOfClass.getName().contains("java.lang.Object")
+                        & !fieldTypeOfClass.getName().contains("java.lang.Object")) {
+                    flag = true;
+                    actualClass = fieldTypeOfClass;
+                    fieldSourceNode = tmpFieldSourceNode;
+                    break;
+                }
+                if (RuleUtils.couldSetGenericTypeObj(tmpFieldSourceNode.getType())) {
+                    valuesOfObjectType.add(tmpFieldSourceNode);
+                    actualClass = fieldTypeOfClass;
+                    fieldSourceNode = tmpFieldSourceNode;
+                }
             }
-            if (ClassUtils.getAllSupers(fieldTypeOfClass).contains(tmpSourceFieldTypeOfClass)
-                    & !tmpSourceFieldTypeOfClass.getName().contains("java.lang.Object")
-                    & !fieldTypeOfClass.getName().contains("java.lang.Object")) {
-                flag = true;
-                actualClass = fieldTypeOfClass;
-                fieldSourceNode = tmpFieldSourceNode;
-                break;
-            }
-            if (RuleUtils.couldSetGenericTypeObj(tmpFieldSourceNode.getType())) {
-                valuesOfObjectType.add(tmpFieldSourceNode);
-                actualClass = fieldTypeOfClass;
-                fieldSourceNode = tmpFieldSourceNode;
-            }
+        }else if (!fieldSources.isEmpty()){
+            flag = true;
+            actualClass = fieldTypeOfClass;
+            fieldSourceNode = fieldSources.iterator().next();
         }
 
         if (actualClass == null)
@@ -430,7 +437,6 @@ public class GadgetInfoRecord {
             }
         }
         valuesOfObjectType.removeAll(toDelete);
-
 
         // 对 equals这种特殊情况进行污点补充
         if (!this.flag
@@ -611,6 +617,45 @@ public class GadgetInfoRecord {
         if (classNode != null){
             GadgetNode newGadgetNode = new GadgetNode(invokedMethod, sootClass);
             classNode.addGadgetNode(newGadgetNode);
+        }
+    }
+
+    // 必须是动态代码触发的方法跳转，多态触发的不算
+    public SootMethod getNextDynamicProxyGadget(TransformableNode tfNode, MethodDescriptor descriptor) {
+        // 1. 初步判断 (基本要求)
+        if (!BasicDataContainer.openDynamicProxyDetect
+                || this.curFragment.directSource == null
+                || !tfNode.containsInvoke()) return null;
+        SootMethod invokedMethod = tfNode.getUnitInvokeExpr().getMethod();
+        // 2. 要求通过相同的动态方法调用拼接
+        if (!this.curFragment.end.equals(invokedMethod)) return null;
+        ValueBox thisValueBox = Parameter.getThisValueBox(tfNode.node);
+        if (thisValueBox == null) return null;
+        // 3. 检查调用的field能否构建为动态代理实例 [接口field]
+        SourceNode sourceNode = descriptor.getFieldSourceNode(tfNode.node, thisValueBox);
+        if (sourceNode == null || !sourceNode.field.getFirst().equals(this.curFragment.directSource.field.getFirst())) return null;
+        Fragment nextFragment = null;
+        int index = this.linkedFragments.indexOf(this.curFragment);
+        if (index > this.linkedFragments.size()-1)
+            return null;
+        nextFragment = this.linkedFragments.get(index+1);
+        if (!nextFragment.type.equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY))    return null;
+        this.isNextDynamicProxyGadget = true;
+        return nextFragment.head;
+    }
+
+    public void setCurFragment(Fragment sinkFragment) {
+        fragmentIndex = this.linkedFragments.indexOf(sinkFragment);
+        this.curFragment = sinkFragment;
+    }
+
+    public void jumpToNextFragment(SootMethod invokedMethod, MethodDescriptor descriptor){
+        if (this.fragmentIndex >= this.linkedFragments.size() -1)   return;
+
+        Fragment nextFragment = this.linkedFragments.get(fragmentIndex+1);
+        if (nextFragment.head.equals(invokedMethod)){
+            this.fragmentIndex += 1;
+            this.curFragment = nextFragment;
         }
     }
 }

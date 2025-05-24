@@ -17,6 +17,7 @@ import gadgets.collection.iocd.unit.instrument.Instruments;
 import gadgets.collection.node.ClassNode;
 import gadgets.collection.node.GadgetInfoRecord;
 import gadgets.unit.Fragment;
+import gadgets.unit.PathRecord;
 import lombok.extern.slf4j.Slf4j;
 import markers.SinkType;
 import markers.Stage;
@@ -28,16 +29,14 @@ import tranModel.Rule;
 import tranModel.Rules.RuleUtils;
 import tranModel.TranUtil;
 import tranModel.TransformableNode;
-import util.DataSaveLoadUtil;
-import util.Pair;
+import util.*;
 import util.StaticAnalyzeUtils.Parameter;
-import util.TimeOutTask;
-import util.Utils;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.*;
 
 import static dataflow.DataFlowAnalysisUtils.flushSinkFragmentsBasedOnPriority;
 import static detetor.SearchUtils.*;
@@ -46,7 +45,7 @@ import static util.ClassRelationshipUtils.isProxyMethod;
 
 @Slf4j
 public class SearchGadgetChains {
-    public static int timeThread = 30;
+    public static int timeThread = 60;
     public static DataflowDetect dataflowDetect = new DataflowDetect();
 
     public static void detect() throws Exception {
@@ -98,6 +97,51 @@ public class SearchGadgetChains {
             }
         }
         setDetectSchemeOff();
+    }
+
+    public static void dynamicProxyFragmentGen(SootMethod proxyHead, SootClass thisClass){
+        MethodDescriptor descriptor = initDealBeforeSearching(proxyHead, null);
+        LinkedList<SootMethod> callStack = new LinkedList<>();
+        callStack.add(proxyHead);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> future = null;
+        try {
+            future = executor.submit(() -> {
+                log.info("[Identifying Dynamic Proxy Fragment] searching from: " + proxyHead.getSignature());
+                dataflowDetect.dynamicProxyFragmentGen(descriptor, callStack); // 直接抛出IOException
+                return null; // Callable必须返回Void
+            });
+            future.get(timeThread, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.error("Timeout when analyzing method " + proxyHead.getName() + ". Located in class "
+                    + (thisClass == null ? proxyHead.getDeclaringClass() : thisClass));
+            if (future != null) {
+                future.cancel(true);
+            }
+        } catch (ExecutionException e) {  // 捕获任务中的异常
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                log.error("IOException in dynamicProxyFragmentGen: " + cause.getMessage());
+            } else {
+                log.error("Unexpected error: " + cause.getMessage(), cause);
+            }
+        } catch (InterruptedException e) {
+            log.error("Task interrupted: " + e.getMessage());
+            Thread.currentThread().interrupt(); // 恢复中断状态
+        } finally {
+            executor.shutdownNow();
+            try {
+                if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    log.warn("Executor did not terminate promptly");
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        descriptor.isEntry = false;
     }
 
     public static boolean collectFields(SootMethod sootMethod, HashSet<SourceNode> usedFields) {
@@ -211,39 +255,6 @@ public class SearchGadgetChains {
         return flag;
     }
 
-
-    /**
-     * 构建以sootMethod作为entry的 fields-taints Graph
-     *
-     * @param sootMethod
-     */
-    public static void constructFieldsTaintGraph(SootMethod sootMethod) {
-        BasicDataContainer.stage = Stage.TAINT_FIELDS_GRAPH_BUILD;
-        MethodDescriptor descriptor = initDealBeforeSearching(sootMethod, null);
-        LinkedList<SootMethod> callStack = new LinkedList<>();
-        HashSet<UndeterminedFieldNode> undeterminedFieldNodes = new HashSet<>();
-        try {
-            new TimeOutTask() {
-                @Override
-                protected void task() throws IOException {
-                    log.info("Search for related fields in the method: " + sootMethod.getSignature());
-                    dataflowDetect.constructFieldsTaintGraph(sootMethod, callStack, undeterminedFieldNodes);
-                }
-
-                @Override
-                protected void timeoutHandler() {
-                    log.error("Timeout when analyzing method" + sootMethod.getName() + ". Located in class"
-                            + sootMethod.getDeclaringClass());
-                }
-            }.run(180);
-        } catch (Exception e) {
-            e.printStackTrace();
-            descriptor.isEntry = false;
-            return;
-        }
-    }
-
-
     /**
      * 对 startMtd 作为起始方法, 搜索并记录 Fragment 信息
      * (1) 搜索过程中检测到的其他动态方法
@@ -262,25 +273,43 @@ public class SearchGadgetChains {
         LinkedList<SootMethod> callStack = new LinkedList<>();
         callStack.add(headMtd);
 
-        // 展开数据流嗖嗖
-        try {
-            new TimeOutTask() {
-                @Override
-                protected void task() throws IOException {
-                    log.info("[Identifying Fragment] searching from: " + headMtd.getSignature());
-                    dataflowDetect.detectFragment(descriptor, callStack);
-                }
 
-                @Override
-                protected void timeoutHandler() {
-                    log.error("Timeout when analyzing method" + headMtd.getName() + ". Located in class"
-                            + (thisClass==null? headMtd.getDeclaringClass(): thisClass));
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> future = null;
+        try {
+            future = executor.submit(() -> {
+                log.info("[Identifying Fragment] searching from: " + headMtd.getSignature());
+                dataflowDetect.detectFragment(descriptor, callStack); // 直接抛出IOException
+                descriptor.isEntry = false;
+                return null; // Callable必须返回Void
+            });
+            future.get(timeThread, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.error("Timeout when analyzing method " + headMtd.getName() + ". Located in class "
+                    + (thisClass == null ? headMtd.getDeclaringClass() : thisClass));
+            if (future != null) {
+                future.cancel(true);
+            }
+        } catch (ExecutionException e) {  // 捕获任务中的异常
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                log.error("IOException in dynamicProxyFragmentGen: " + cause.getMessage());
+            } else {
+                log.error("Unexpected error: " + cause.getMessage(), cause);
+            }
+        } catch (InterruptedException e) {
+            log.error("Task interrupted: " + e.getMessage());
+            Thread.currentThread().interrupt(); // 恢复中断状态
+        } finally {
+            executor.shutdownNow();
+            try {
+                if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    log.warn("Executor did not terminate promptly");
                 }
-            }.run(timeThread);
-        } catch (Exception e) {
-            e.printStackTrace();
-            descriptor.isEntry = false;
-            return;
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
 
         descriptor.isEntry = false;
@@ -296,7 +325,11 @@ public class SearchGadgetChains {
             FragmentsContainer.sortSinkFragments();
             return;
         }
-
+        // Since sink fragments based on dynamic proxies can easily be concatenated into a large number of chains, which interferes with the priority ranking of other types of chains, they are detected separately.
+        if (BasicDataContainer.openDynamicProxyDetect){
+            linkDynamicProxyFragments();
+            return;
+        }
 
         BasicDataContainer.stage = Stage.FRAGMENT_LINKING;
 
@@ -373,6 +406,78 @@ public class SearchGadgetChains {
         log.info("Total number of Gadget chains = " + FragmentsContainer.gadgetFragments.size());
     }
 
+    // 针对dynamic proxy fragment的拼接
+    public static void linkDynamicProxyFragments() {
+        if (!FragmentsContainer.protocolCheckRule.openBPLink()) {
+            FragmentsContainer.gadgetFragments = FragmentsContainer.sinkFragments;
+            FragmentsContainer.sortSinkFragments();
+            return;
+        }
+
+        BasicDataContainer.stage = Stage.FRAGMENT_LINKING;
+
+        LinkedHashSet<Fragment> newSinkFragments = new LinkedHashSet<>();
+        HashSet<Fragment> freeStateFragments = new HashSet<>(FragmentsContainer.stateFragmentsMap.get(Fragment.FRAGMENT_STATE.FREE_STATE));
+        LinkedHashSet<Fragment> allSinkFragments = new LinkedHashSet<>();
+        for (Fragment dynamicProxyFragment: FragmentsContainer.dynamicProxyFragments){
+            if (dynamicProxyFragment.state.equals(Fragment.FRAGMENT_STATE.SINK))
+                allSinkFragments.add(dynamicProxyFragment);
+        }
+        HashSet<SootMethod> dynamicMethods = new HashSet<>();
+        HashSet<SootMethod> dynamicMethodsNext = new HashSet<>();
+        for (Fragment sinkFragment : allSinkFragments) {
+            dynamicMethods.addAll(sinkFragment.connectRequire.preLinkableMethods);
+        }
+        int linkCount = 0;
+
+        // 迭代
+        while (!dynamicMethods.isEmpty() && linkCount <= BasicDataContainer.preDynamicProxyFragmentLimit-1) {
+            newSinkFragments.clear();
+            HashSet<Fragment> toDelete = new HashSet<>();
+            for (Fragment freeStateFragment : freeStateFragments) {
+                if (!dynamicMethods.contains(freeStateFragment.end) && !(freeStateFragment.end.getDeclaringClass().isInterface()))
+                    continue;
+
+                HashSet<Fragment> addSinkFragments = dataflowDetect.linkFreeStateFragments(freeStateFragment);
+                if (!addSinkFragments.isEmpty()) toDelete.add(freeStateFragment);
+                for (Fragment newSinkFragment : addSinkFragments) { // TODO: 增加开关，选择是否要开启启发式选择
+                    flushSinkFragmentsBasedOnPriority(newSinkFragment, allSinkFragments, newSinkFragments);
+
+                    HashSet<SootMethod> newDynamicMtds = new HashSet<>(newSinkFragment.connectRequire.preLinkableMethods);
+                    newDynamicMtds.removeAll(dynamicMethods);
+                    if (!newDynamicMtds.isEmpty()) {
+                        dynamicMethodsNext.addAll(newDynamicMtds);
+                        dynamicMethods.addAll(newDynamicMtds);
+                    }
+                }
+            }
+            // 在获取所有的新增 Sink Fragments 后, 将全局的sinkFragments更新为本轮新增的,
+            // 并将这些Fragments从Free-State Fragments中删除
+            FragmentsContainer.sinkFragments = new HashSet<>(newSinkFragments);
+            if (newSinkFragments.isEmpty() || dynamicMethodsNext.isEmpty()) {
+                break;
+            }
+            dynamicMethods = new HashSet<>(dynamicMethodsNext);
+            freeStateFragments.removeAll(toDelete);
+        }
+        FragmentsContainer.sinkFragments = allSinkFragments;
+
+        newSinkFragments.clear();
+        for (Fragment sourceFragment : FragmentsContainer.stateFragmentsMap.get(Fragment.FRAGMENT_STATE.SOURCE)) {
+            if (!RuleUtils.heuristicGadgetChainLink(sourceFragment, null))
+                continue;
+            HashSet<Fragment> addSinkFragments = dataflowDetect.linkSourceFragments(sourceFragment);
+            for (Fragment fragment : addSinkFragments) {
+                flushSinkFragmentsBasedOnPriority(fragment, newSinkFragments, newSinkFragments);
+            }
+
+            FragmentsContainer.gadgetFragments = newSinkFragments;
+        }
+
+        FragmentsContainer.sortSinkFragments();
+        log.info("Total number of Gadget chains = " + FragmentsContainer.gadgetFragments.size());
+    }
+
     /**
      * 对检测出的 gadget Fragments 收集信息, 生成 IOCD
      */
@@ -426,23 +531,43 @@ public class SearchGadgetChains {
         LinkedList<SootMethod> callStack = new LinkedList<>();
         callStack.add(sourceGadget);
 
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> future = null;
         try {
-            new TimeOutTask() {
-                @Override
-                protected void task() throws IOException {
-                    dataflowDetect.inferGadgetInfosOfWholeLife(sourceGadget, gadgetInfoRecord, callStack);
+            future = executor.submit(() -> {
+                log.info("[IOCD Generation] searching for: ");
+                DataSaveLoadUtil.printCallStack(gadgetInfoRecord.gadgets, gadgetInfoRecord.sinkType);
+                dataflowDetect.inferGadgetInfosOfWholeLife(sourceGadget, gadgetInfoRecord, callStack); // 直接抛出IOException
+                descriptor.isEntry = false;
+                return null; // Callable必须返回Void
+            });
+            future.get(60*10, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.error("Timeout when analyzing method " + sourceGadget.getName() + ". Located in class "
+                    + sourceGadget.getDeclaringClass());
+            if (future != null) {
+                future.cancel(true);
+            }
+        } catch (ExecutionException e) {  // 捕获任务中的异常
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                log.error("IOException in inferGadgetsInfos: " + cause.getMessage());
+            } else {
+                log.error("Unexpected error: " + cause.getMessage(), cause);
+            }
+        } catch (InterruptedException e) {
+            log.error("Task interrupted: " + e.getMessage());
+            Thread.currentThread().interrupt(); // 恢复中断状态
+        } finally {
+            executor.shutdownNow();
+            try {
+                if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    log.warn("Executor did not terminate promptly");
                 }
-
-                @Override
-                protected void timeoutHandler() {
-                    log.error("Timeout when analyzing method" + sourceGadget.getName() + ". Located in class"
-                            + sourceGadget.getDeclaringClass());
-                }
-            }.run(60 * 2);
-        } catch (Throwable e) {
-            e.printStackTrace();
-            descriptor.isEntry = false;
-            return;
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

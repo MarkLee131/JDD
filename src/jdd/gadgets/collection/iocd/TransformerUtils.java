@@ -91,6 +91,7 @@ public class TransformerUtils {
             if (tmpClassNode.isProxy) {
                 cRecord.isProxy = tmpClassNode.isProxy;
                 cRecord.triggerMethod = tmpClassNode.triggerMethod.getName();
+                tmpClassNode.interfacesOfDynamicProxyInstance.forEach(sootClass -> {cRecord.addProxyInterface.add(sootClass.getName());});
             }
 
             String tmpClassName = tmpClassNode.sootClass.getName(); // 该node所属对象

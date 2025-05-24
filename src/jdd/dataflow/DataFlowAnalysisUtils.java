@@ -77,6 +77,11 @@ public class DataFlowAnalysisUtils {
         DataFlowAnalysisUtils.updateAfterInvoke(callerDescriptor, calleeDescriptor, conClassNode, gadgetInfoRecord, tfNode);
     }
 
+    public static CFG getCFG(SootMethod sootMethod){
+        CFG cfg = new CFG(sootMethod, true);
+        cfg.buildCFG();
+        return cfg;
+    }
 
     public static MethodDescriptor getMethodDescriptor(SootMethod sootMethod){
         // 如果不是具体的方法，比如抽象方法那就不作处理
@@ -385,6 +390,7 @@ public class DataFlowAnalysisUtils {
         invokedDescriptor.paramValInfo = inputCallFrame;
         // 在一次分析内entryMethod相同, 直接继承
         invokedDescriptor.sourcesTaintGraph.entryMethod = descriptor.sourcesTaintGraph.entryMethod;
+        invokedDescriptor.pathRecord = descriptor.pathRecord; // 路径信息的传播
 //        if (BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING_SINGLE) && BasicDataContainer.openDynamicProxyDetect){
 //            // 解析到调用到下一个方法的条件约束信息
 //            parseInvokeConditions(tfNode, descriptor, invokedDescriptor);
@@ -590,6 +596,20 @@ public class DataFlowAnalysisUtils {
             invokedMethods.clear();
 
         return invokedMethods;
+    }
+
+    public static HashSet<SootMethod> getInvokedMethods(TransformableNode tfNode, MethodDescriptor descriptor,
+                                                        HashMap<Integer, Pointer> inputCallFrame,
+                                                        LinkedList<SootMethod> callStack,
+                                                        GadgetInfoRecord gadgetInfoRecord) {
+        HashSet<SootMethod> ret = new HashSet<>();
+        SootMethod next = gadgetInfoRecord.getNextDynamicProxyGadget(tfNode, descriptor);
+        if (next != null){
+            ret.add(next);
+            return ret;
+        }
+
+        return getInvokedMethods(tfNode, inputCallFrame, callStack, gadgetInfoRecord);
     }
 
     public static HashSet<SootMethod> getInvokedMethods(TransformableNode tfNode,
@@ -895,7 +915,9 @@ public class DataFlowAnalysisUtils {
         tfNode.forward(descriptor);
         if (!tfNode.exec | !tfNode.containsInvoke())
             return false;
-        if (BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING) || BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING_SINGLE))
+        if (BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING)
+                || BasicDataContainer.stage.equals(Stage.FRAGMENT_SEARCHING_SINGLE)
+                || BasicDataContainer.stage.equals(Stage.DYNAMIC_PROXY_FRAGMENT_GENERATING))
             tfNode.forwardCheck(descriptor, callStack);
         return true;
     }
@@ -1022,8 +1044,6 @@ public class DataFlowAnalysisUtils {
         for (Fragment newSinkFragment: newSinkFragments) {
             calculatePriority(newSinkFragment, basicFragmentsPriorityRecord, allBasicFragmentsMap);
         }
-
-        FragmentsContainer.sinkFragments.size();
     }
 
     public static void calculatePriorityForBasicFragments(Fragment fragment,
@@ -1202,6 +1222,10 @@ public class DataFlowAnalysisUtils {
                                                MethodDescriptor invokedDescriptor,
                                                MethodDescriptor descriptor){
         ClassNode nextClassNode = gadgetInfoRecord.createNewClassNode(tfNode, invokedDescriptor, descriptor, callStack);
+        if (gadgetInfoRecord.isNextDynamicProxyGadget && nextClassNode != null) {
+            nextClassNode.markDynamicProxyInstance(invokedDescriptor.sootMethod);
+            gadgetInfoRecord.isNextDynamicProxyGadget = false;
+        }
 
         if (nextClassNode == null) {
             ClassNode curClassNode = gadgetInfoRecord.getClassNode(gadgetInfoRecord.curClass);
@@ -1210,6 +1234,8 @@ public class DataFlowAnalysisUtils {
             curClassNode.createAndAddGadgetNode(invokedDescriptor);
         }else {
             nextClassNode.createAndAddGadgetNode(invokedDescriptor);
+            // 更新当前的fragment
+            gadgetInfoRecord.jumpToNextFragment(invokedDescriptor.sootMethod, descriptor);
         }
 
 

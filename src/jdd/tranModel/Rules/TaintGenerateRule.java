@@ -41,6 +41,9 @@ public class TaintGenerateRule implements Rule {
                 BasicDataContainer.blackList.add(tmpMtdIn.getSignature());
             }
         }
+        BasicDataContainer.blackList.add("<java.io.ObjectInputStream: void defaultReadObject()>");
+        BasicDataContainer.blackList.add("<java.io.ObjectInputStream: void defaultReadFields(java.lang.Object,java.io.ObjectStreamClass)>");
+        BasicDataContainer.blackList.add("<java.io.ObjectInputStream: java.lang.Object readObject0(java.lang.Class,boolean)>");
     }
 
     /**

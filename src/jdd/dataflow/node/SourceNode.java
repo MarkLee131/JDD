@@ -7,6 +7,7 @@ import soot.*;
 import soot.jimple.Constant;
 import util.ClassRelationshipUtils;
 import util.StaticAnalyzeUtils.FieldUtil;
+import util.Utils;
 
 import java.util.LinkedList;
 
@@ -182,6 +183,12 @@ public class SourceNode {
     public Type getType(int index){
         if (field.size() > index && isField())   return field.get(index).getType();
         return getType();
+    }
+
+    public SootClass getClassOfType(){
+        Type type = this.getType();
+        if (type == null)   return null;
+        return Utils.toSootClass(type);
     }
 
     public String toString(){

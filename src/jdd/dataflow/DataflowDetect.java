@@ -2,6 +2,7 @@ package dataflow;
 
 
 import PointToAnalyze.pointer.Pointer;
+import gadgets.unit.PathRecord;
 import markers.Stage;
 import tranModel.Rules.RuleUtils;
 import tranModel.TranUtil;
@@ -30,6 +31,7 @@ import java.util.*;
 import static dataflow.DataFlowAnalysisUtils.*;
 import static detetor.SearchUtils.initDealBeforeSearching;
 import static util.ClassRelationshipUtils.containsInCallStack;
+import static util.ClassRelationshipUtils.isProxyMethod;
 
 
 @Slf4j
@@ -133,12 +135,55 @@ public class DataflowDetect {
     }
 
 
+    public void dynamicProxyFragmentGen(MethodDescriptor descriptor, LinkedList<SootMethod> callStack) throws IOException {
+        SootMethod sootMethod = getMethodDescriptor(descriptor);
+        if (sootMethod == null)
+            return;
+        if (ClassRelationshipUtils.isProxyMethod(sootMethod)){
+            log.info("DEBUG");
+        }
+
+        // 更新调用该method的方法到该方法的信息, ;过程间分析
+        DataFlowAnalysisUtils.updateInterInfos(descriptor);
+
+        List<TransformableNode> topologicalOrder = TranUtil.getTopologicalOrderedTNodesFromCFG(descriptor.cfg);
+        for (TransformableNode tfNode: topologicalOrder){
+            if (!DataFlowAnalysisUtils.checkTransformable(tfNode,descriptor,callStack)) continue;
+            if (callStack.size() <= BasicDataContainer.stackLenLimitNum){
+                DataFlowAnalysisUtils.recordEqualsFieldInEqualsMtd(tfNode, descriptor);
+                // 进行污点检查, 判断是否有需要继续跟进invoked method进行污点分析
+                if(!DataFlowAnalysisUtils.continueCheck(tfNode, descriptor)){ continue; }
+
+                // 记录方法调用中this指针信息和参数的指针信息
+                HashMap<Integer, Pointer> inputCallFrame = DataFlowAnalysisUtils.getMethodBaseParamInfo(tfNode, descriptor);
+                HashSet<SootMethod> invokedMethods = DataFlowAnalysisUtils.getInvokedMethods(tfNode, descriptor);
+
+                for (SootMethod invokedMethod: invokedMethods) {
+                    if (BasicDataContainer.blackList.contains(invokedMethod.getSignature())
+                            || DataFlowAnalysisUtils.isDupInvokedMethodInFragment(invokedMethod, callStack))
+                        continue;
+
+                    descriptor.pathRecord.recordPathCondition(callStack, invokedMethod, tfNode);
+                    MethodDescriptor calleeDescriptor = DataFlowAnalysisUtils.flowInvokedMethod(descriptor, invokedMethod, inputCallFrame, callStack, tfNode);
+                    if (calleeDescriptor == null)
+                        continue;
+                    dynamicProxyFragmentGen(calleeDescriptor, callStack);
+                    descriptor.pathRecord.deletePathCondition(callStack);
+                    DataFlowAnalysisUtils.outInvokedMethod(calleeDescriptor, descriptor, tfNode, callStack);
+                }
+            }
+        }
+
+        DataFlowAnalysisUtils.updateAfterAnalysisMtd(descriptor);
+    }
+
+
     public HashSet<Fragment> linkFreeStateFragments(Fragment freeStateFragment){
         HashSet<Fragment> newSinkFragments = new HashSet<>();
         HashSet<Fragment> linkableSinkFragments = FragmentsContainer.getLinkableSinkFragments(freeStateFragment);
         for (Fragment sinkFragment: linkableSinkFragments){
             if (sinkFragment.type.equals(Fragment.FRAGMENT_TYPE.REFLECTION)){
-
+                // 动态时拼接
             }else {
                 Fragment newSinkFragment = new Fragment(freeStateFragment, sinkFragment);
                 if (newSinkFragment.isFlag())
@@ -253,7 +298,7 @@ public class DataflowDetect {
                 gadgetInfoRecord.inImplicitClassFlag = tmpInImplicitClassFlag;
 
                 HashMap<Integer, Pointer> inputCallFrame = DataFlowAnalysisUtils.getMethodBaseParamInfo(tfNode, descriptor);
-                HashSet<SootMethod> invokedMethods = DataFlowAnalysisUtils.getInvokedMethods(tfNode, inputCallFrame, callStack, gadgetInfoRecord);
+                HashSet<SootMethod> invokedMethods = DataFlowAnalysisUtils.getInvokedMethods(tfNode, descriptor, inputCallFrame, callStack, gadgetInfoRecord);
                 tmpInImplicitClassFlag = gadgetInfoRecord.inImplicitClassFlag;
 
                 for (SootMethod invokedMethod: invokedMethods) {

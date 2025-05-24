@@ -4,6 +4,7 @@ import PointToAnalyze.pointer.Pointer;
 import config.SootConfig;
 import dataflow.DataFlow;
 import dataflow.node.SourcesTaintGraph;
+import gadgets.collection.markers.Comparison;
 import gadgets.collection.markers.DependenceType;
 import gadgets.collection.node.CollisionNode;
 import gadgets.collection.node.DependenceNode;
@@ -594,16 +595,21 @@ public class RuleUtils {
     }
 
 
-
     public static HashSet<HashSet<Integer>> linkCheckOfTaints(Fragment preFragment, Fragment sucFragment){
         HashSet<HashSet<Integer>> paramsTaitRequires = new HashSet<>();
-        if (sucFragment.connectRequire == null)
-            System.out.println("???");
-        if (sucFragment.connectRequire.paramsTaitRequire == null)
-            System.out.println("???");
         for (HashSet<Integer> condSet: sucFragment.connectRequire.paramsTaitRequire) {
             boolean flag = true;
             for (int paramInd : condSet) {
+                // 需要转换到对应的关键参数索引
+//                if (sucFragment.type.equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY)){
+//                    if (paramInd == 0)
+//                        paramInd = -1;
+//                    else { // TODO: 考虑特殊情况
+//                        flag = false;
+//                        break;
+//                    }
+//                }
+                // 如果是第二个/三个参数，则与preFragment.end方法本身相关，一般情况下难以控制
                 if (!preFragment.endToHeadTaints.containsKey(paramInd)) {
                     flag = false;
                     break;
@@ -2028,5 +2034,65 @@ public class RuleUtils {
             }
         }
         return true;
+    }
+
+    public static Comparison parseComparison(Value condition, boolean satisfyFlag){
+        Comparison comparison = null;
+        if (condition.toString().contains("==")){
+            if (satisfyFlag)
+                comparison = Comparison.EQUAL;
+            else comparison = Comparison.NO_EQUAL_TO;
+        }
+
+        else if (condition.toString().contains("!=")){
+            if (satisfyFlag)   comparison = Comparison.NO_EQUAL_TO;
+            else comparison = Comparison.EQUAL;
+        }
+
+        else if (condition.toString().contains("<=")){
+            if (satisfyFlag)   comparison = Comparison.SMALLER_OR_EQUAL;
+            else comparison = Comparison.BIGGER;
+        }
+
+        else if (condition.toString().contains("<")){
+            if (satisfyFlag)   comparison = Comparison.SMALLER;
+            else comparison = Comparison.BIGGER_OR_EQUAL;
+        }
+
+        else if (condition.toString().contains(">=")){
+            if (satisfyFlag)   comparison = Comparison.BIGGER_OR_EQUAL;
+            else comparison = Comparison.SMALLER;
+        }
+
+        else if (condition.toString().contains(">")){
+            if (satisfyFlag)   comparison = Comparison.BIGGER;
+            else comparison = Comparison.SMALLER_OR_EQUAL;
+        }
+
+        return comparison;
+    }
+
+    public static Comparison flipComparison(Comparison comparison){
+        switch (comparison){
+            case SMALLER_OR_EQUAL:
+                comparison = Comparison.BIGGER;
+                break;
+            case BIGGER_OR_EQUAL:
+                comparison = Comparison.SMALLER;
+                break;
+            case SMALLER:
+                comparison = Comparison.BIGGER_OR_EQUAL;
+                break;
+            case BIGGER:
+                comparison = Comparison.SMALLER_OR_EQUAL;
+                break;
+            case EQUAL:
+                comparison = Comparison.NO_EQUAL_TO;
+                break;
+            case NO_EQUAL_TO:
+                comparison = Comparison.EQUAL;
+        }
+
+        return comparison;
     }
 }

@@ -23,6 +23,7 @@ public class BasicDataContainer {
     public static boolean openDebugMode = false;
     public static boolean needSerializable = true; // 判断是否开启序列化检查
     public static boolean openDynamicProxyDetect = false; // 判断是否开启动态代理检测
+    public static int preDynamicProxyFragmentLimit = 1;
     public static boolean isEntryPolluteSelect;
     public static int stackLenLimitNum = 5;
     public static int polyLenLimit = 3;
@@ -54,7 +55,7 @@ public class BasicDataContainer {
     public static List<String> accessPermissions = Arrays.asList("public","protected","private");
 
     public static HashMap<SootMethod, MethodDescriptor> methodMapDescriptor = new HashMap<>();
-    public static HashMap<Integer, TransformableNode> conditionTfNodesMap = new HashMap<>();
+    public static HashMap<Integer, TransformableNode> conditionTfNodesMap = new HashMap<>();     // 全局的条件语句
     public static int heuristicShortChainCutLen = 0;
 
     public static void reset(){

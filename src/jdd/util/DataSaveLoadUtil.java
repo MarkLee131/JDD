@@ -131,6 +131,18 @@ public class DataSaveLoadUtil {
         }
     }
 
+
+    public static void printCallStack(LinkedList<SootMethod> callStack, SinkType sinkType){
+        SootMethod entryMtd = callStack.get(0);
+        String first = "["+sinkType+" Gadget] "+entryMtd.getSignature();
+        System.out.println(first);
+        for (int i=1; i<callStack.size();i++) {
+            String info ;
+            info = " -> "+callStack.get(i).getSignature();;
+            System.out.println(info);
+        }
+    }
+
     public static boolean fileExistOrNot(String filePath){
         File file = new File(filePath);
         return file.exists();
