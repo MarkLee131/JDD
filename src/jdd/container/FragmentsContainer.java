@@ -173,6 +173,7 @@ public class FragmentsContainer {
         HashSet<Fragment> ret = new HashSet<>();
         SootMethod callerMethod = freeStateFragment.end;
         for (Fragment recordedSinkFragment: sinkFragments){
+            if (recordedSinkFragment.state.equals(SOURCE))  continue; // source fragment 不应该被 link
             if (recordedSinkFragment.head.equals(freeStateFragment.head))
                 continue;
             if (recordedSinkFragment.connectRequire.preLinkableMethods.contains(callerMethod)) {
@@ -484,7 +485,7 @@ public class FragmentsContainer {
             HashMap<TransformableNode, HashSet<SourceNode>> map = descriptor.sinkUnitsRecord.get(sinkType);
             if (map != null) {
                 fragment.connectRequire.paramsTaitRequire = new HashSet<>();
-                if (fragment.type.equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY)){
+                if (fragment.type != null && fragment.type.equals(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY)){
                     HashSet<Integer> taintRequire = new HashSet<>();
                     taintRequire.add(-1);
                     fragment.connectRequire.paramsTaitRequire.add(taintRequire);
@@ -619,5 +620,14 @@ public class FragmentsContainer {
                 sortedSinkFragmentsMap.put(sinkFragment.priority,  new HashSet<>());
             sortedSinkFragmentsMap.get(sinkFragment.priority).add(sinkFragment);
         }
+    }
+
+    public static void onlySelectSinkFragments(Fragment.FRAGMENT_TYPE fragmentType){
+        HashSet<Fragment> tmp = new HashSet<>();
+        for (Fragment fragment: gadgetFragments){
+            if (!fragment.fragmentTypes.contains(fragmentType))
+                tmp.add(fragment);
+        }
+        gadgetFragments.removeAll(tmp);
     }
 }

@@ -31,9 +31,14 @@ public class PathRecord {
     }
 
     public LinkedHashSet<TransformableNode> getInvokeTransforms(LinkedList<SootMethod> gadgets, SootMethod invokedMethod) {
+        LinkedHashSet<TransformableNode> ret = new LinkedHashSet<>();
         LinkedList<SootMethod> tmpCallStack = new LinkedList<>(gadgets);
         tmpCallStack.remove(invokedMethod);
-        return callStack2Transformable.get(tmpCallStack);
+        ret = callStack2Transformable.get(tmpCallStack);
+        if (ret == null) {
+            ret = new LinkedHashSet<>();
+        }
+        return ret;
     }
 
     public void deletePathCondition(LinkedList<SootMethod> callStack) {

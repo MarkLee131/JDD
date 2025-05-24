@@ -77,6 +77,7 @@ public class SearchGadgetChains {
                 }
             }
         }
+        System.exit(0);
     }
 
     public static void searchGadgetFragments() {
@@ -474,6 +475,7 @@ public class SearchGadgetChains {
             FragmentsContainer.gadgetFragments = newSinkFragments;
         }
 
+        FragmentsContainer.onlySelectSinkFragments(Fragment.FRAGMENT_TYPE.DYNAMIC_PROXY);
         FragmentsContainer.sortSinkFragments();
         log.info("Total number of Gadget chains = " + FragmentsContainer.gadgetFragments.size());
     }

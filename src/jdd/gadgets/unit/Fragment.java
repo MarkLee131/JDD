@@ -308,7 +308,7 @@ public class Fragment {
 
     public void extractProxyInfos(MethodDescriptor descriptor){
         LinkedHashSet<TransformableNode> nextTfNodes = descriptor.pathRecord.getInvokeTransforms(gadgets, end);
-        nextTfNodes.add(this.invokeNode);
+        nextTfNodes.add(this.invokeNode); // TODO: some times missed
         for (TransformableNode nextTfNode: nextTfNodes) {
             HashSet<Integer> path_record = nextTfNode.path_record;
             for (Integer hashCode : path_record) {
