@@ -115,10 +115,6 @@ public class FragmentsContainer {
         BasicDataContainer.stage = Stage.DYNAMIC_PROXY_FRAGMENT_GENERATING;
         SootMethod dynamicProxyHeadInterface = BasicDataContainer.commonMtdMap.get("invokeHandler");
         for (SootMethod proxyHead: ClassRelationshipUtils.getAllSubMethods(dynamicProxyHeadInterface)){
-//            if(!proxyHead.getSignature().equals("<bsh.XThis$Handler: java.lang.Object invoke(java.lang.Object,java.lang.reflect.Method,java.lang.Object[])>"))
-//                continue;
-            if(!proxyHead.getDeclaringClass().getName().equals("org.codehaus.groovy.runtime.ConversionHandler"))
-                continue;
             SearchGadgetChains.dynamicProxyFragmentGen(proxyHead, null);
         }
         setDetectSchemeOff();
