@@ -106,7 +106,7 @@ public class SootConfig {
                         protected void timeoutHandler(){
                             log.error("将类" + cl + "导入到soot过程中超时，跳过处理");
                         }
-                    }).run(10);
+                    }).run(100);
 
                 }catch (Exception e){
                     log.error("加载类" + cl + "过程中出错：" + e.getMessage());
