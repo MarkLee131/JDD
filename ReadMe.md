@@ -19,6 +19,8 @@ Dependencies: See `pom.xml` for specific dependencies
 Since the open-source release of JDD, we received some valuable questions and suggestions. Thanks to everyone who shared their thoughts! We’ve compiled and summarized these issues below.
 - [Common problems and update logs](./document/Log.md)
 
+- For dynamic proxy detection, please use the `dpx` branch.
+
 Additionally, the current version of JDD still has many areas that could be optimized. We’d love to have experts with program analysis experience join us in further developing JDD. If you have any questions or suggestions, don’t hesitate to reach out directly!
 
 ### Disclaimer
