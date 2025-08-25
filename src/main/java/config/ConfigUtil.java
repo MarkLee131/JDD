@@ -16,7 +16,7 @@ import java.util.jar.JarFile;
 @Slf4j
 public class ConfigUtil {
 
-    private static Properties configProperties = new Properties();
+    public static Properties configProperties = new Properties();
     // 解压过程中不做处理的文件夹列表
     private static String[] unDecompressDirList = { "META-INF", "OSGI-INF" };
     private static String[] specialDirList = { "/lib/", "WEB-INF/classes/" };
@@ -332,10 +332,11 @@ public class ConfigUtil {
                     configProperties.getProperty(ConfigurationEnum.STORE_IN_DATABASE.toString(), "true");
             RegularConfig.prioritizedGadgetChainLimit = Integer.parseInt(configProperties.getProperty(ConfigurationEnum.PRIORITIZED_GADGET_CHAIN_LIMIT.toString(), "-1"));
             RegularConfig.inputEXPInfosPath = getPathProperty(ConfigurationEnum.INPUT_EXP_PATH.toString());
-            BasicDataContainer.stackLenLimitNum = Integer.parseInt(configProperties.getProperty(ConfigurationEnum.CHAIN_LIMIT.toString(), "20"));
+            BasicDataContainer.chainLimit = Integer.parseInt(configProperties.getProperty(ConfigurationEnum.CHAIN_LIMIT.toString(), "20"));
             BasicDataContainer.stackLenLimitNum = Integer.parseInt(configProperties.getProperty(ConfigurationEnum.FRAGMENT_LEN_LIMIT.toString(), "6"));
             RegularConfig.needSerializable = configProperties.getProperty(ConfigurationEnum.NEED_SERIALIZABLE.toString(), "true").equals("true");
             BasicDataContainer.needSerializable = RegularConfig.needSerializable;
+            RegularConfig.outPutIOCD = configProperties.getProperty(ConfigurationEnum.OUTPUT_IOCD.toString(), "true").equals("true");
             RegularConfig.linkMode = configProperties.getProperty(ConfigurationEnum.LINK_MODE.toString(), "strict").equals("strict")? "strict":"loose";
             RegularConfig.derivationType = configProperties.getProperty(ConfigurationEnum.DERIVATION_TYPE.toString(),"all");
             RegularConfig.taintRuleMode = configProperties.getProperty(ConfigurationEnum.TAINT_RULE_MODE.toString(), "strict");

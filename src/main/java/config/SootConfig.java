@@ -80,7 +80,7 @@ public class SootConfig {
     // 向soot中逐个加入需要被分析的类
     public static void loadTargetClass(){
         HashSet hashSet = new HashSet();
-        String[] jdkPaths = RegularConfig.sootClassPath.split(":");
+        String[] jdkPaths = RegularConfig.sootClassPath.split(File.pathSeparator);
         List<String> paths = new ArrayList<>(Arrays.asList(jdkPaths));
         paths.add(RegularConfig.inputPath);
         for(String path : paths){

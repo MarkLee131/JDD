@@ -46,7 +46,7 @@ import static util.ClassRelationshipUtils.isProxyMethod;
 
 @Slf4j
 public class SearchGadgetChains {
-    public static int timeThread = 15;
+    public static int timeThread = 30;
     public static DataflowDetect dataflowDetect = new DataflowDetect();
 
     public static void detect() throws Exception {
@@ -62,8 +62,22 @@ public class SearchGadgetChains {
         linkFragments();
 
         // 生成IOCD信息
-        System.out.println("[ IOCD Generating ]");
-        buildIOCD();
+        if (RegularConfig.outPutIOCD) {
+            System.out.println("[ IOCD Generating ]");
+            buildIOCD();
+        }else {
+            System.out.println("[ Print Detected Gadget Chains ]");
+            // just print the detected chains, see the detected chains in DetectedGadgetChains.txt
+            String targetResultsPath = RegularConfig.outputDir + File.separator + "gadgets" + File.separator + RegularConfig.outPutDirName + File.separator;
+            DataSaveLoadUtil.createDir(targetResultsPath);
+            for (HashSet<Fragment> sinkFragments : FragmentsContainer.sortedSinkFragmentsMap.values()) {
+                for (Fragment sinkFragment : sinkFragments) {
+                    DataSaveLoadUtil.recordCallStackToFile(sinkFragment.gadgets, sinkFragment.sinkType,
+                            targetResultsPath+ "DetectedGadgetChains.txt",
+                            true);
+                }
+            }
+        }
     }
 
     public static void searchGadgetFragments() {
@@ -424,7 +438,7 @@ public class SearchGadgetChains {
                     log.error("Timeout when analyzing method" + sourceGadget.getName() + ". Located in class"
                             + sourceGadget.getDeclaringClass());
                 }
-            }.run(60 * 2);
+            }.run(timeThread);
         } catch (Throwable e) {
             e.printStackTrace();
             descriptor.isEntry = false;

@@ -55,7 +55,6 @@ public class SearchUtils {
         BasicDataContainer.gadgetParamsGenerate = true;
         BasicDataContainer.infosCollect = true;
         BasicDataContainer.openJoinRule = true;
-        BasicDataContainer.stackLenLimitNum = 6;
     }
 
     public static void setDetectSchemeOff(){

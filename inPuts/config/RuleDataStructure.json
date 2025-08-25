@@ -341,6 +341,35 @@
         ]
       },
       "indexMax": -2,
+      "methodSig": "java.lang.reflect.Method getReadMethod()",
+      "extendFlag": true,
+      "methodSigs": [],
+      "needInfluenceCheck": false,
+      "checkLevel": 2,
+      "serializableCheckFlag": false,
+      "taintInfluenceFieldsRecord": {}
+    },
+    {
+      "taintsConditionRecord": {
+        "-1": [
+          -1
+        ]
+      },
+      "paramsBeTainted": {
+        "-1": [
+          -2
+        ]
+      },
+      "taintInfluenceRecord": {
+        "-1": [
+          {
+            "isMutable": true,
+            "key": -1,
+            "value": -2
+          }
+        ]
+      },
+      "indexMax": -2,
       "methodSig": "\u003cjava.beans.PropertyDescriptor: java.lang.reflect.Method getReadMethod()\u003e",
       "extendFlag": true,
       "methodSigs": [],
@@ -401,6 +430,35 @@
       },
       "indexMax": -2,
       "methodSig": "java.beans.PropertyDescriptor getPropertyDescriptor(java.lang.Object,java.lang.String)",
+      "extendFlag": true,
+      "methodSigs": [],
+      "needInfluenceCheck": false,
+      "checkLevel": 2,
+      "serializableCheckFlag": true,
+      "taintInfluenceFieldsRecord": {}
+    },
+    {
+      "taintsConditionRecord": {
+        "0": [
+          0
+        ]
+      },
+      "paramsBeTainted": {
+        "0": [
+          -2
+        ]
+      },
+      "taintInfluenceRecord": {
+        "0": [
+          {
+            "isMutable": true,
+            "key": 0,
+            "value": -2
+          }
+        ]
+      },
+      "indexMax": -2,
+      "methodSig": "java.util.List getPropertyDescriptorsWithGetters(java.lang.Class)",
       "extendFlag": true,
       "methodSigs": [],
       "needInfluenceCheck": false,
@@ -2065,7 +2123,7 @@
         ]
       },
       "indexMax": -2,
-      "methodSig": "\u003cjava.lang.reflect.Method: java.Glang.String getName()\u003e",
+      "methodSig": "\u003cjava.lang.reflect.Method: java.lang.String getName()\u003e",
       "extendFlag": true,
       "methodSigs": [],
       "needInfluenceCheck": false,

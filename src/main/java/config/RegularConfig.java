@@ -18,6 +18,7 @@ public class RegularConfig {
     // 协议选取
     public static String protocol;
     public static String linkMode;
+    public static boolean outPutIOCD;
     // 是否存入mysql
     public static String storeInDataBase;
 

@@ -21,6 +21,7 @@ public class JdkNativeProtocolCheckRule extends AbstractProtocolCheckRule {
         entryMethods = new HashSet<>(Arrays.asList("void readObjectNoData()", "void readObject(java.io.ObjectInputStream)",
                 "void readExternal(java.io.ObjectInput)", "java.lang.Object readResolve()"));
         this.setSinkCheckRule();
+        updateEntryMethods();
     }
 
     public boolean needEqualsTrigger() {

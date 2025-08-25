@@ -23,6 +23,7 @@ public class Utils {
     public static Set<String> toSet(String str){
         HashSet<String> ret = new HashSet<>();
         for (String sinkRule: str.split(",")){
+            if (sinkRule.isEmpty()) continue;
             ret.add(sinkRule);
         }
         return ret;

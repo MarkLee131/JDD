@@ -24,7 +24,7 @@ public class TaintSpreadRuleUnit {
     public HashSet<String> methodSigs = new HashSet<>();
 
     public boolean needInfluenceCheck = false;
-    public int checkLevel = 3;
+    public int checkLevel = 3; // 3(最严格): method signature; 2: sub method signature匹配; 3: 只匹配方法名
     public boolean serializableCheckFlag = true;
     public HashMap<Integer, HashSet<String>> taintInfluenceFieldsRecord = new HashMap<>();
 
