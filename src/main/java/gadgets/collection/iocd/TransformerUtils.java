@@ -27,6 +27,7 @@ import java.util.*;
 
 import static gadgets.collection.AnalyzeUtils.*;
 import static util.DataSaveLoadUtil.toGJson;
+import static util.DataSaveLoadUtil.getCallKind;
 
 @Slf4j
 public class TransformerUtils {
@@ -37,11 +38,11 @@ public class TransformerUtils {
         String outputJson = toGJson(outputRecord);
 
         String fileName = dir + hasCode + ".json";
-        try{
+        try {
             FileWriter out = new FileWriter(fileName, false);
             out.write(outputJson);
             out.flush();
-        } catch (IOException e){
+        } catch (IOException e) {
             log.error("Could not write result to " + fileName + "!");
             e.printStackTrace();
         }
@@ -57,10 +58,16 @@ public class TransformerUtils {
         iocd.hashCollisionFlag = gadgetInfoRecord.hashCollisionFlag;
         recordSpecificInfosForJsonProtocol(gadgetInfoRecord, iocd);
 
-        LinkedList<Pair<Integer,String>> callStack = new LinkedList<>();
-        for (SootMethod gadget: gadgetInfoRecord.gadgets)
+        LinkedList<Pair<Integer, String>> callStack = new LinkedList<>();
+        LinkedList<MethodCallRecord> callStackWithKind = new LinkedList<>();
+        for (SootMethod gadget : gadgetInfoRecord.gadgets) {
             callStack.add(new Pair<>(gadget.getSignature().hashCode(), gadget.getSignature()));
+            String callKind = getCallKind(gadget);
+            callStackWithKind
+                    .add(new MethodCallRecord(gadget.getSignature().hashCode(), gadget.getSignature(), callKind));
+        }
         iocd.gadgetCallStack = callStack;
+        iocd.gadgetCallStackWithKind = callStackWithKind;
 
         LinkedList<ClassRecord> tmpClassRecords = new LinkedList<>();
         HashSet<ClassRecord> conClassRecords = new HashSet<>();
@@ -72,7 +79,7 @@ public class TransformerUtils {
         ClassNode rootClassNode = tmpClassNodesMap.get(rootClass);
 
         ClassNode tmpRootClassNode = rootClassNode;
-        while (tmpRootClassNode.rootClassNode != null){
+        while (tmpRootClassNode.rootClassNode != null) {
             rootClassNode = tmpRootClassNode.rootClassNode;
             tmpRootClassNode = rootClassNode;
         }
@@ -95,21 +102,20 @@ public class TransformerUtils {
 
             String tmpClassName = tmpClassNode.sootClass.getName(); // 该node所属对象
             cRecord.className = tmpClassName;
-            if(tmpClassNode.rootClassNode == null){
+            if (tmpClassNode.rootClassNode == null) {
                 cRecord.setSourceRecord(null);
-            }
-            else {
-//                Pair<String, String> tmpPredecessorRecord = new Pair<>(
-//                        tmpClassNode.source.classOfField.getName(),
-//                        tmpClassNode.source.field.getLast().getSignature()
-//                );
+            } else {
+                // Pair<String, String> tmpPredecessorRecord = new Pair<>(
+                // tmpClassNode.source.classOfField.getName(),
+                // tmpClassNode.source.field.getLast().getSignature()
+                // );
 
                 cRecord.setSourceRecord(makeSourceNodeRecord(tmpClassNode.source));
-                for (SourceNode candidateSourceNode: tmpClassNode.candidateSources){
+                for (SourceNode candidateSourceNode : tmpClassNode.candidateSources) {
                     cRecord.getCandidateSources().add(makeSourceNodeRecord(candidateSourceNode));
                 }
 
-//                cRecord.setPredClassId(tmpClassNode.source.classId);
+                // cRecord.setPredClassId(tmpClassNode.source.classId);
 
                 if (tmpClassNode.caller != null) {
                     cRecord.setPredecessorMethod(makeInitMethodRecord(tmpClassNode.caller));
@@ -119,14 +125,14 @@ public class TransformerUtils {
             LinkedList<MethodRecord> tmpMRs = new LinkedList<>();
             LinkedList<SootMethod> currentCallStack = tmpClassNode.gadgets;
             LinkedList<ConditionRecord> tmpAllConditions = new LinkedList<>();
-            for (SootMethod sootMethod: currentCallStack){
+            for (SootMethod sootMethod : currentCallStack) {
                 GadgetNode gadgetNode = gadgetInfoRecord.gadgetNodesMap.get(sootMethod);
                 MethodRecord tmpMR = makeInitMethodRecord(gadgetNode);
                 tmpMRs.add(tmpMR);
 
                 HashMap<IfStmt, ConditionNode> tmpDominatorCNs = gadgetNode.dominatorConditions;
                 HashMap<IfStmt, ConditionNode> tmpImplicitCNs = gadgetNode.implicitConditions;
-                for (ConditionNode conditionNode: tmpDominatorCNs.values()){
+                for (ConditionNode conditionNode : tmpDominatorCNs.values()) {
                     ConditionRecord conditionRecord = makeInitConditionRecord(conditionNode, tmpMR, true);
                     if ((conditionRecord.conditionValue.isEmpty() && conditionRecord.conditionName.isEmpty())
                             && ((conditionRecord.type & ConditionNode.UNCONTROLLABLE) == 0))
@@ -134,7 +140,7 @@ public class TransformerUtils {
                     tmpAllConditions.add(conditionRecord);
                 }
 
-                for (ConditionNode conditionNode: tmpImplicitCNs.values()){
+                for (ConditionNode conditionNode : tmpImplicitCNs.values()) {
                     ConditionRecord conditionRecord = makeInitConditionRecord(conditionNode, tmpMR, false);
                     if ((conditionRecord.conditionValue.isEmpty() && conditionRecord.conditionName.isEmpty())
                             && ((conditionRecord.type & ConditionNode.UNCONTROLLABLE) == 0))
@@ -147,13 +153,13 @@ public class TransformerUtils {
 
             LinkedList<FieldRecord> tmpFieldRecord = new LinkedList<>();
             HashMap<SourceNode, HashSet<ClassNode>> tmpField = tmpClassNode.fields;
-            for (SourceNode fieldSourceNode: tmpField.keySet()){
+            for (SourceNode fieldSourceNode : tmpField.keySet()) {
                 HashSet<ClassNode> nextClassNodes = tmpClassNode.fields.get(fieldSourceNode);
                 FieldRecord sourceToNextClassNode = makeInitFieldRecord(fieldSourceNode);
 
                 tmpFieldRecord.add(sourceToNextClassNode);
 
-                for (ClassNode nextClassNode: nextClassNodes) {
+                for (ClassNode nextClassNode : nextClassNodes) {
                     if (!visited.containsKey(nextClassNode) && nextClassNode != null) {
                         classNodesQueue.add(nextClassNode);
                         visited.put(nextClassNode, sourceToNextClassNode);
@@ -164,7 +170,7 @@ public class TransformerUtils {
 
             ArrayList<FieldRecord> tmpConFieldRecord = new ArrayList<>();
             HashMap<SourceNode, HashSet<ClassNode>> tmpConField = tmpClassNode.implicitFields;
-            for (SourceNode fieldSourceNode: tmpConField.keySet()) {
+            for (SourceNode fieldSourceNode : tmpConField.keySet()) {
                 HashSet<ClassNode> conNextClassNodes = tmpClassNode.implicitFields.get(fieldSourceNode);
                 for (ClassNode conNextClassNode : conNextClassNodes) {
                     FieldRecord sourceToNextClassNode = makeInitFieldRecord(fieldSourceNode);
@@ -183,21 +189,20 @@ public class TransformerUtils {
             cRecord.conFields = tmpConFieldRecord;
 
             cRecord.isProxy = tmpClassNode.isProxy;
-            if (cRecord.isProxy){
-//                cRecord.addProxyInterface.add(tmpClassNode.invocationHandlerClassNode);
+            if (cRecord.isProxy) {
+                // cRecord.addProxyInterface.add(tmpClassNode.invocationHandlerClassNode);
             }
 
-            if (!tmpClassNode.flag){
+            if (!tmpClassNode.flag) {
                 cRecord.flag = false;
                 conClassRecords.add(cRecord);
-            }
-            else {
+            } else {
                 tmpClassRecords.add(cRecord);
             }
         }
 
         LinkedHashMap<Integer, Boolean> conditionsOrder = new LinkedHashMap<>();
-        for (SootMethod gadget: gadgetInfoRecord.gadgets){
+        for (SootMethod gadget : gadgetInfoRecord.gadgets) {
             if (gadgetInfoRecord.gadgets.getLast().equals(gadget))
                 continue;
             GadgetNode gadgetNode = gadgetInfoRecord.gadgetNodesMap.get(gadget);
@@ -207,9 +212,10 @@ public class TransformerUtils {
                 continue;
 
             MethodRecord methodRecord = makeInitMethodRecord(gadgetNode);
-            for (IfStmt ifStmt: gadgetNode.allConditions.keySet()){
+            for (IfStmt ifStmt : gadgetNode.allConditions.keySet()) {
                 ConditionNode conditionNode = gadgetNode.allConditions.get(ifStmt);
-                ConditionRecord conditionRecord = makeInitConditionRecord(conditionNode, methodRecord, conditionNode.isDominator);
+                ConditionRecord conditionRecord = makeInitConditionRecord(conditionNode, methodRecord,
+                        conditionNode.isDominator);
                 if ((conditionRecord.conditionValue.isEmpty() && conditionRecord.conditionName.isEmpty())
                         && ((conditionRecord.type & ConditionNode.UNCONTROLLABLE) == 0))
                     continue;
@@ -221,7 +227,7 @@ public class TransformerUtils {
 
         HashSet<DependenceNode> dependenceNodes = gadgetInfoRecord.dependenceNodes;
         HashSet<DependenceRecord> dependenceRecords = new HashSet<>();
-        for (DependenceNode dependenceNode: dependenceNodes) {
+        for (DependenceNode dependenceNode : dependenceNodes) {
             DependenceRecord tmpDependenceRecord = makeInitDependenceRecord(dependenceNode);
             dependenceRecords.add(tmpDependenceRecord);
         }
@@ -230,8 +236,8 @@ public class TransformerUtils {
         if (gadgetInfoRecord.collisionNode != null)
             iocd.hashCollisionRecord = makeInitHashCollisionRecord(gadgetInfoRecord.collisionNode);
 
-        for (SourceNode sourceNode: gadgetInfoRecord.fieldsUsedSitesRecords.keySet()){
-            for (Pair<String, Integer> usedSite : gadgetInfoRecord.fieldsUsedSitesRecords.get(sourceNode)){
+        for (SourceNode sourceNode : gadgetInfoRecord.fieldsUsedSitesRecords.keySet()) {
+            for (Pair<String, Integer> usedSite : gadgetInfoRecord.fieldsUsedSitesRecords.get(sourceNode)) {
                 UsedSiteRecord usedSiteRecord = makeInitUsedSiteRecord(iocd, usedSite);
                 FieldRecord fieldRecord = makeInitFieldRecord(sourceNode);
                 if (fieldRecord != null) {
@@ -240,11 +246,11 @@ public class TransformerUtils {
             }
         }
 
-        for (ClassNode implicitClassNode: gadgetInfoRecord.getAllImplicitClassNodes()){
-            for (SootMethod sootMethod: implicitClassNode.implicitGadgetNodes.keySet()){
+        for (ClassNode implicitClassNode : gadgetInfoRecord.getAllImplicitClassNodes()) {
+            for (SootMethod sootMethod : implicitClassNode.implicitGadgetNodes.keySet()) {
                 GadgetNode gadgetNode = implicitClassNode.implicitGadgetNodes.get(sootMethod);
                 MethodRecord methodRecord = makeInitMethodRecord(gadgetNode);
-                for (ConditionNode conditionNode: gadgetNode.implicitConditions.values()){
+                for (ConditionNode conditionNode : gadgetNode.implicitConditions.values()) {
                     ConditionRecord tmpConditionRecord = makeInitConditionRecord(conditionNode, methodRecord, false);
                     iocd.supplementConditions.add(tmpConditionRecord);
                 }
@@ -253,7 +259,7 @@ public class TransformerUtils {
 
         HashSet<SinkNode> sinkNodes = gadgetInfoRecord.sinkNodes;
         LinkedList<SinkRecord> tmpSinkRecords = new LinkedList<>();
-        for (SinkNode sinkNode: sinkNodes){
+        for (SinkNode sinkNode : sinkNodes) {
             SinkRecord sinkRecord = makeInitSinkRecord(sinkNode);
             tmpSinkRecords.add(sinkRecord);
         }
@@ -262,10 +268,9 @@ public class TransformerUtils {
         return iocd;
     }
 
-
-    public static SourceRecord makeSourceNodeRecord(SourceNode sourceNode){
+    public static SourceRecord makeSourceNodeRecord(SourceNode sourceNode) {
         LinkedList<String> fieldSigs = new LinkedList<>();
-        if (!sourceNode.field.isEmpty()){
+        if (!sourceNode.field.isEmpty()) {
             for (SootField sootField : sourceNode.field)
                 fieldSigs.add(sootField.getSignature());
         }
@@ -279,8 +284,8 @@ public class TransformerUtils {
     }
 
     public static UsedSiteRecord makeInitUsedSiteRecord(IOCD iocd,
-                                              Pair<String, Integer> usedSite){
-        for (UsedSiteRecord usedSiteRecord : iocd.usedFieldsRecords){
+            Pair<String, Integer> usedSite) {
+        for (UsedSiteRecord usedSiteRecord : iocd.usedFieldsRecords) {
             if (usedSiteRecord.inClassName.equals(usedSite.getKey()) & usedSiteRecord.site.equals(usedSite.getValue()))
                 return usedSiteRecord;
         }
@@ -291,7 +296,7 @@ public class TransformerUtils {
         return newUsedSiteRecord;
     }
 
-    public static CollisionRecord makeInitHashCollisionRecord(CollisionNode collisionNode){
+    public static CollisionRecord makeInitHashCollisionRecord(CollisionNode collisionNode) {
         CollisionRecord collisionRecord = new CollisionRecord();
         collisionRecord.type = collisionNode.type;
         collisionRecord.collisionMethodRecord = makeInitMethodRecord(collisionNode.collisionMethod);
@@ -300,19 +305,19 @@ public class TransformerUtils {
         if (collisionNode.secondHashCodeMtd != null)
             collisionRecord.secondHashCodeMtd = makeInitMethodRecord(collisionNode.secondHashCodeMtd);
 
-        for (SourceNode sourceNode: collisionNode.first){
+        for (SourceNode sourceNode : collisionNode.first) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sourceNode);
             if (tmpFieldRecord != null)
                 collisionRecord.first.add(tmpFieldRecord);
         }
 
-        for (SourceNode sourceNode: collisionNode.second){
+        for (SourceNode sourceNode : collisionNode.second) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sourceNode);
             if (tmpFieldRecord != null)
                 collisionRecord.second.add(tmpFieldRecord);
         }
 
-        for (SourceNode sourceNode: collisionNode.top){
+        for (SourceNode sourceNode : collisionNode.top) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sourceNode);
             if (tmpFieldRecord != null)
                 collisionRecord.top.add(tmpFieldRecord);
@@ -321,7 +326,7 @@ public class TransformerUtils {
         return collisionRecord;
     }
 
-    public static DependenceRecord makeInitDependenceRecord(DependenceNode dependenceNode){
+    public static DependenceRecord makeInitDependenceRecord(DependenceNode dependenceNode) {
         DependenceRecord dependenceRecord = new DependenceRecord();
         dependenceRecord.type = dependenceNode.type;
         if (dependenceNode.methodName != null)
@@ -333,22 +338,23 @@ public class TransformerUtils {
         return dependenceRecord;
     }
 
-    public static SinkRecord makeInitSinkRecord(SinkNode sinkNode){
+    public static SinkRecord makeInitSinkRecord(SinkNode sinkNode) {
         SinkRecord sinkRecord = new SinkRecord();
         sinkRecord.sinkClassName = sinkNode.sootClass.getName();
         sinkRecord.sinkMethod = makeInitMethodRecord(sinkNode.node.sootMethod);
         sinkRecord.jimpleUnitInfo = sinkNode.node.unit.toString();
         if (sinkNode.sinkType.equals(SinkType.FILE))
-            makeInitFileSinkRecord(sinkNode,sinkRecord);
+            makeInitFileSinkRecord(sinkNode, sinkRecord);
         else if (sinkNode.sinkType.equals(SinkType.INVOKE))
-            makeInitInvokeSinkRecord(sinkNode,sinkRecord);
-        else makeInitSimpleSinkRecord(sinkNode, sinkRecord);
+            makeInitInvokeSinkRecord(sinkNode, sinkRecord);
+        else
+            makeInitSimpleSinkRecord(sinkNode, sinkRecord);
 
         return sinkRecord;
     }
 
-    public static SinkRecord makeInitSimpleSinkRecord(SinkNode sinkNode, SinkRecord sinkRecord){
-        for (Integer paramInd: sinkNode.controllableSinkValues.keySet()) {
+    public static SinkRecord makeInitSimpleSinkRecord(SinkNode sinkNode, SinkRecord sinkRecord) {
+        for (Integer paramInd : sinkNode.controllableSinkValues.keySet()) {
             for (SourceNode sourceNode : sinkNode.controllableSinkValues.get(paramInd)) {
                 FieldRecord tmpFieldRecord = makeInitFieldRecord(sourceNode);
                 if (tmpFieldRecord != null) {
@@ -361,55 +367,54 @@ public class TransformerUtils {
         return sinkRecord;
     }
 
-    public static SinkRecord makeInitInvokeSinkRecord(SinkNode sinkNode, SinkRecord sinkRecord){
+    public static SinkRecord makeInitInvokeSinkRecord(SinkNode sinkNode, SinkRecord sinkRecord) {
         int elementCount = 0;
-        if (sinkNode.sinkObject != null){
+        if (sinkNode.sinkObject != null) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sinkNode.sinkObject);
             if (tmpFieldRecord != null) {
-                elementCount ++;
+                elementCount++;
                 sinkRecord.sinkClassBelongToF = tmpFieldRecord;
             }
         }
 
-        if (sinkNode.sinkMethod != null){
+        if (sinkNode.sinkMethod != null) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sinkNode.sinkMethod);
             if (tmpFieldRecord != null) {
-                elementCount ++;
+                elementCount++;
                 sinkRecord.sinkMethodF = tmpFieldRecord;
             }
         }
 
-        if (sinkNode.sinkMethodName != null){
+        if (sinkNode.sinkMethodName != null) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sinkNode.sinkMethodName);
             if (tmpFieldRecord != null) {
-                elementCount ++;
+                elementCount++;
                 sinkRecord.sinkMethodNameF = tmpFieldRecord;
             }
         }
 
-        if ( elementCount != 2)
+        if (elementCount != 2)
             return null;
         return sinkRecord;
     }
 
-    public static SinkRecord makeInitFileSinkRecord(SinkNode sinkNode, SinkRecord sinkRecord){
+    public static SinkRecord makeInitFileSinkRecord(SinkNode sinkNode, SinkRecord sinkRecord) {
         int elementCount = 0;
-        if (!sinkNode.sinkFilePath.isEmpty()){
-            for (SourceNode sourceNode: sinkNode.sinkFilePath){
+        if (!sinkNode.sinkFilePath.isEmpty()) {
+            for (SourceNode sourceNode : sinkNode.sinkFilePath) {
                 FieldRecord tmpFieldRecord = makeInitFieldRecord(sourceNode);
-                if (tmpFieldRecord != null){
+                if (tmpFieldRecord != null) {
                     sinkRecord.sinkFilePathF.add(tmpFieldRecord);
                     elementCount = 1;
                 }
             }
         }
 
-
-        if (sinkNode.sinkFileContent != null){
+        if (sinkNode.sinkFileContent != null) {
             FieldRecord tmpFieldRecord = makeInitFieldRecord(sinkNode.sinkFileContent);
-            if (tmpFieldRecord != null){
+            if (tmpFieldRecord != null) {
                 sinkRecord.sinkFileContentF = tmpFieldRecord;
-                elementCount ++;
+                elementCount++;
             }
         }
 
@@ -420,8 +425,8 @@ public class TransformerUtils {
     }
 
     public static ConditionRecord makeInitConditionRecord(ConditionNode conditionNode,
-                                                          MethodRecord methodRecord,
-                                                          boolean isBasic){
+            MethodRecord methodRecord,
+            boolean isBasic) {
         ConditionRecord conditionRecord = new ConditionRecord();
         conditionRecord.basic = isBasic;
         conditionRecord.type = conditionNode.type;
@@ -431,19 +436,19 @@ public class TransformerUtils {
         conditionRecord.hashCode = ifStmt.hashCode();
         conditionRecord.comparator = getComparator(conditionNode.comparison);
 
-        Pair<String,Integer> pair = new Pair<>(conditionNode.conditionNode.context.sootClass.getName(),
+        Pair<String, Integer> pair = new Pair<>(conditionNode.conditionNode.context.sootClass.getName(),
                 getLineNumberByUnit(conditionNode.conditionNode.node.unit));
         conditionRecord.usedSite = pair;
 
         LinkedHashMap<String, FieldRecord> conditionNames = new LinkedHashMap<>(); // 变量
         LinkedHashMap<String, String> conditionValues = new LinkedHashMap<>(); // 比较值 (E.g. 常量)
-        for (SourceNode sourceNode: conditionNode.controllableValues){
+        for (SourceNode sourceNode : conditionNode.controllableValues) {
             FieldRecord fieldRecord = makeInitFieldRecord(sourceNode);
             if (fieldRecord != null)
                 conditionNames.put(sourceNode.getType().toString(), fieldRecord);
         }
 
-        for (Object value: conditionNode.conditionValues){
+        for (Object value : conditionNode.conditionValues) {
             conditionValues.put(getTypeString(value), value.toString());
         }
 
@@ -453,13 +458,13 @@ public class TransformerUtils {
         return conditionRecord;
     }
 
-    public static String getTypeString(Object value){
+    public static String getTypeString(Object value) {
         if (value instanceof Value)
             return ((Value) value).getType().toString();
         return value.getClass().toString();
     }
 
-    public static FieldRecord makeInitFieldRecord(SourceNode sourceNode){
+    public static FieldRecord makeInitFieldRecord(SourceNode sourceNode) {
         if (!sourceNode.isField())
             return null;
 
@@ -490,7 +495,7 @@ public class TransformerUtils {
         return fieldRecord;
     }
 
-    public static String getComparator(Comparison comparison){
+    public static String getComparator(Comparison comparison) {
         if (comparison.equals(Comparison.NO_EQUAL_TO))
             return "!=";
         if (comparison.equals(Comparison.EQUAL))
@@ -506,7 +511,7 @@ public class TransformerUtils {
         return null;
     }
 
-    public static MethodRecord makeInitMethodRecord(GadgetNode gadgetNode){
+    public static MethodRecord makeInitMethodRecord(GadgetNode gadgetNode) {
         MethodRecord methodRecord = new MethodRecord();
         methodRecord.methodName = gadgetNode.sootMethod.getName();
         methodRecord.sig = gadgetNode.sootMethod.getSignature();
@@ -514,7 +519,7 @@ public class TransformerUtils {
         return methodRecord;
     }
 
-    public static MethodRecord makeInitMethodRecord(SootMethod sootMethod){
+    public static MethodRecord makeInitMethodRecord(SootMethod sootMethod) {
         MethodRecord methodRecord = new MethodRecord();
         methodRecord.classBelongTo = sootMethod.getDeclaringClass().getName();
         methodRecord.methodName = sootMethod.getName();
@@ -522,7 +527,7 @@ public class TransformerUtils {
         return methodRecord;
     }
 
-    public static void recordSpecificInfosForJsonProtocol(GadgetInfoRecord gadgetInfoRecord, IOCD iocd){
+    public static void recordSpecificInfosForJsonProtocol(GadgetInfoRecord gadgetInfoRecord, IOCD iocd) {
         if (!RegularConfig.protocol.equals("json"))
             return;
 
@@ -530,17 +535,16 @@ public class TransformerUtils {
         SootMethod entryMtd = gadgetInfoRecord.gadgets.getFirst();
         iocd.publicEntry = entryMtd.isPublic();
 
-        if (entryMtd.getName().startsWith("get")){
+        if (entryMtd.getName().startsWith("get")) {
             iocd.entryType = "getter";
-        }else if (ClassRelationshipUtils.isOverWrittenInterfaceMtd(entryMtd)){
+        } else if (ClassRelationshipUtils.isOverWrittenInterfaceMtd(entryMtd)) {
             iocd.entryType = "interfaceOver";
         }
     }
 
-
-    public static void recordIfStmtAndMethodForInst(GadgetInfoRecord gadgetInfoRecord, Instruments instruments){
+    public static void recordIfStmtAndMethodForInst(GadgetInfoRecord gadgetInfoRecord, Instruments instruments) {
         HashSet<GadgetNode> allGadgetNodes = gadgetInfoRecord.getAllGadgetNodes();
-        for (GadgetNode gadgetNode: allGadgetNodes){
+        for (GadgetNode gadgetNode : allGadgetNodes) {
             SootMethod sootMethod = gadgetNode.sootMethod;
             SootClass sootClass = gadgetNode.sootClass;
 
@@ -561,7 +565,7 @@ public class TransformerUtils {
             allConditionNodes.putAll(gadgetNode.dominatorConditions);
             allConditionNodes.putAll(gadgetNode.implicitConditions);
 
-            for (IfStmt ifStmt: allConditionNodes.keySet()){
+            for (IfStmt ifStmt : allConditionNodes.keySet()) {
                 if (hashCodesRecord.contains(ifStmt.hashCode()))
                     continue;
                 IfStmtInstRecord ifStmtRecord = new IfStmtInstRecord();
@@ -574,7 +578,7 @@ public class TransformerUtils {
 
                 Node node = ifStmtNodeMap.get(ifStmt);
                 HashSet<Integer> successes = new HashSet<>();
-                for (Node success : node.successorNodes){
+                for (Node success : node.successorNodes) {
                     successes.add(getLineNumberByUnit(success.unit));
                 }
                 ifStmtRecord.setSuccessor(successes);
@@ -582,9 +586,9 @@ public class TransformerUtils {
                 ifStmtRecords.add(ifStmtRecord);
             }
 
-            if (instruments.getClassIfStmtsMap().containsKey(sootClass.getName())){
+            if (instruments.getClassIfStmtsMap().containsKey(sootClass.getName())) {
                 instruments.getClassIfStmtsMap().get(sootClass.getName()).addAll(ifStmtRecords);
-            }else {
+            } else {
                 instruments.getClassIfStmtsMap().put(sootClass.getName(), ifStmtRecords);
             }
 
@@ -614,60 +618,58 @@ public class TransformerUtils {
         }
     }
 
-
-
-    public static void exportInstrumentsRecordJson(Instruments instruments, String dir){
+    public static void exportInstrumentsRecordJson(Instruments instruments, String dir) {
         recordSink(instruments);
         String outputJson = toGJson(instruments);
         String fileName = dir + "IfStmtRecord.json";
-        try{
+        try {
             FileWriter out = new FileWriter(fileName, false);
             out.write(outputJson);
             out.flush();
-        } catch (IOException e){
+        } catch (IOException e) {
             log.error("Could not write result to " + fileName + "!");
             e.printStackTrace();
         }
     }
 
-    public static void recordSink(Instruments instruments){
+    public static void recordSink(Instruments instruments) {
         // ClassLoader
-        for (String methodSig: ClassLoaderCheckRule.newInstanceMethodSigs){
+        for (String methodSig : ClassLoaderCheckRule.newInstanceMethodSigs) {
             setSinkInstRecord(methodSig, true, Arrays.asList(-1), instruments);
         }
-        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("ClassLoader.defineClass")){
+        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("ClassLoader.defineClass")) {
             setSinkInstRecord(methodSig, false, "byte[]", instruments);
         }
-        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("URLClassLoader.<init>")){
+        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("URLClassLoader.<init>")) {
             setSinkInstRecord(methodSig, false, "java.net.URL[]", instruments);
         }
-        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("URLClassLoader.loadClass")){
+        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("URLClassLoader.loadClass")) {
             setSinkInstRecord(methodSig, false, Arrays.asList(-1), instruments);
         }
-        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("Class.forName")){
+        for (String methodSig : ClassLoaderCheckRule.classLoaderRiskyMethodSigs.get("Class.forName")) {
             setSinkInstRecord(methodSig, false, "java.lang.ClassLoader", instruments);
         }
 
         // EXE
-        for (String methodSig: ExecCheckRule.riskyMethodSigs){
-            if (Scene.v().containsMethod(methodSig)){
+        for (String methodSig : ExecCheckRule.riskyMethodSigs) {
+            if (Scene.v().containsMethod(methodSig)) {
                 SootMethod sootMethod = Scene.v().getMethod(methodSig);
-                setSinkInstRecord(sootMethod,true,Arrays.asList(0),instruments);
+                setSinkInstRecord(sootMethod, true, Arrays.asList(0), instruments);
             }
         }
 
         // FileCheck
-        for (String methodSig: FileCheckRule.fileSinkSig) {
+        for (String methodSig : FileCheckRule.fileSinkSig) {
             setSinkInstRecord(methodSig, true, Arrays.asList(0), instruments);
         }
 
         // Invoke
         for (String methodSig : InvokeCheckRule.invokeSigs) {
-            setSinkInstRecord(methodSig,true,Arrays.asList(-1,0),instruments);
+            setSinkInstRecord(methodSig, true, Arrays.asList(-1, 0), instruments);
         }
 
         // LookUp
-        for (String methodSig : JNDICheckRule.riskyJNDIMethodsSig){
+        for (String methodSig : JNDICheckRule.riskyJNDIMethodsSig) {
             SootMethod sootMethod = Scene.v().getMethod(methodSig);
             if (sootMethod == null) {
                 log.info("Cannot find soot Method " + methodSig);
@@ -675,8 +677,8 @@ public class TransformerUtils {
             }
 
             Integer ind = null;
-            if (methodSig.contains("lookup")){
-                ind = Parameter.getArgIndexByType(sootMethod,"java.lang.String");
+            if (methodSig.contains("lookup")) {
+                ind = Parameter.getArgIndexByType(sootMethod, "java.lang.String");
                 if (ind == null)
                     ind = Parameter.getArgIndexByType(sootMethod, "javax.naming.Name");
             }
@@ -685,25 +687,26 @@ public class TransformerUtils {
             }
             if (ind == null)
                 continue;
-            setSinkInstRecord(sootMethod, true, Arrays.asList(ind),instruments);
+            setSinkInstRecord(sootMethod, true, Arrays.asList(ind), instruments);
         }
 
         // Custom
         CustomCheckRule.setSinksInstRecord(instruments);
     }
 
-
-    public static void setSinkInstRecord(String methodSig, boolean flag, String typeString, Instruments instruments){
+    public static void setSinkInstRecord(String methodSig, boolean flag, String typeString, Instruments instruments) {
         SootMethod sootMethod = Scene.v().getMethod(methodSig);
         if (sootMethod == null) {
             log.info("Cannot find soot Method " + methodSig);
             return;
         }
 
-        setSinkInstRecord(sootMethod,flag,Arrays.asList(Parameter.getArgIndexByType(sootMethod,typeString)),instruments);
+        setSinkInstRecord(sootMethod, flag, Arrays.asList(Parameter.getArgIndexByType(sootMethod, typeString)),
+                instruments);
     }
 
-    public static void setSinkInstRecord(String methodSig, boolean flag, List<Integer> pollutedParams, Instruments instruments){
+    public static void setSinkInstRecord(String methodSig, boolean flag, List<Integer> pollutedParams,
+            Instruments instruments) {
         SootMethod sootMethod = Scene.v().getMethod(methodSig);
         if (sootMethod == null) {
             log.info("Cannot find soot Method " + methodSig);
@@ -713,7 +716,8 @@ public class TransformerUtils {
         setSinkInstRecord(sootMethod, flag, pollutedParams, instruments);
     }
 
-    public static void setSinkInstRecord(SootMethod sootMethod, boolean flag, List<Integer> pollutedParams, Instruments instruments){
+    public static void setSinkInstRecord(SootMethod sootMethod, boolean flag, List<Integer> pollutedParams,
+            Instruments instruments) {
         SinkInstRecord sinkInstRecord = new SinkInstRecord();
 
         MethodInstRecord methodInstRecord = new MethodInstRecord();
@@ -724,7 +728,7 @@ public class TransformerUtils {
         methodInstRecord.setHashCode(sootMethod.getSignature().hashCode());
         sinkInstRecord.setMethodInstRecord(methodInstRecord);
 
-        for (Integer paramInd: pollutedParams)
+        for (Integer paramInd : pollutedParams)
             sinkInstRecord.getPollutedParams().add(paramInd);
         sinkInstRecord.setFlag(flag);
 

@@ -19,6 +19,11 @@ import org.apache.commons.io.FileUtils;
 import soot.SootClass;
 import soot.SootMethod;
 import soot.jimple.IfStmt;
+import soot.jimple.InvokeExpr;
+import soot.jimple.StaticInvokeExpr;
+import soot.jimple.VirtualInvokeExpr;
+import soot.jimple.InterfaceInvokeExpr;
+import soot.jimple.SpecialInvokeExpr;
 import structure.RuleDataStructure;
 import structure.taint.TaintSpreadRuleUnit;
 
@@ -40,15 +45,16 @@ import static gadgets.collection.iocd.TransformerUtils.transformGadgetRecord;
 public class DataSaveLoadUtil {
     /**
      * 工具类，用于将对象进行Json的序列化
+     * 
      * @param o
      * @return Json序列化后的数据
      */
-    public static String toGJson(Object o){
+    public static String toGJson(Object o) {
         Gson gson = new Gson();
         return gson.toJson(o);
     }
 
-    public static Object toObject(String json, Class clazzType){
+    public static Object toObject(String json, Class clazzType) {
         Gson gson = new Gson();
         return gson.fromJson(json, clazzType);
     }
@@ -56,63 +62,65 @@ public class DataSaveLoadUtil {
     // 加载 ruleDataStructure
     public static void loadRuleDataStructure() throws IOException {
         String rulesPath = RegularConfig.configPath + File.separator + "RuleDataStructure.json";
-        String jsonContent = FileUtils.readFileToString(new File(rulesPath),"utf-8");
+        String jsonContent = FileUtils.readFileToString(new File(rulesPath), "utf-8");
 
         RulesContainer.ruleDataStructure = (RuleDataStructure) toObject(jsonContent, RuleDataStructure.class);
         // 初始化 Rules
-        for (TaintSpreadRuleUnit taintSpreadRuleUnit: RulesContainer.ruleDataStructure.getTaintSpreadRuleUnits()){
+        for (TaintSpreadRuleUnit taintSpreadRuleUnit : RulesContainer.ruleDataStructure.getTaintSpreadRuleUnits()) {
             taintSpreadRuleUnit.init();
             BasicDataContainer.blackList.addAll(taintSpreadRuleUnit.methodSigs);
         }
     }
 
     // 存储更新后的 ruleDataStructure
-    public static void saveRuleDataStructure(){
+    public static void saveRuleDataStructure() {
         if (RulesContainer.ruleDataStructure == null)
             return;
 
         String outPutJson = toGJson(RulesContainer.ruleDataStructure);
         String rulesPath = RegularConfig.configPath + File.separator + "RuleDataStructure.json";
-        try{
+        try {
             FileWriter out = new FileWriter(rulesPath, false);
             out.write(outPutJson);
             out.flush();
-        } catch (IOException e){
+        } catch (IOException e) {
             log.error("Could not write result to " + rulesPath + "!");
             e.printStackTrace();
         }
     }
 
-    public static void saveTaintSpreadRules(HashSet<TaintSpreadRuleUnit> candidateTaintSpreadRuleUnits){
+    public static void saveTaintSpreadRules(HashSet<TaintSpreadRuleUnit> candidateTaintSpreadRuleUnits) {
         assert RulesContainer.ruleDataStructure != null;
         RulesContainer.ruleDataStructure.getTaintSpreadRuleUnits().addAll(candidateTaintSpreadRuleUnits);
     }
 
-    public static void saveTaintSpreadRule(TaintSpreadRuleUnit candidateTaintSpreadRuleUnit){
+    public static void saveTaintSpreadRule(TaintSpreadRuleUnit candidateTaintSpreadRuleUnit) {
         assert RulesContainer.ruleDataStructure != null;
         RulesContainer.ruleDataStructure.getTaintSpreadRuleUnits().add(candidateTaintSpreadRuleUnit);
     }
 
     /**
      * 将 call stack - sink类型信息 记录到输出文件中
+     * 
      * @param callStack
      * @param sinkType
      */
     public static void recordCallStackToFile(LinkedList<SootMethod> callStack, SinkType sinkType,
-                                             String fileName, boolean printFlag) throws IOException {
+            String fileName, boolean printFlag) throws IOException {
         SootMethod entryMtd = callStack.get(0);
         FileWriter out = openOrCreateFileWriter(fileName, true);
-//                new FileWriter(fileName,true);
+        // new FileWriter(fileName,true);
         try {
-            String first = "["+sinkType+" Gadget] "+entryMtd.getSignature();
+            String entryCallKind = getCallKind(entryMtd);
+            String first = "[" + sinkType + " Gadget] " + entryMtd.getSignature() + " [" + entryCallKind + "]";
             out.write(first);
             out.write("\n");
             if (printFlag)
                 System.out.println(first);
 
-            for (int i=1; i<callStack.size();i++) {
-                String info ;
-                info = " -> "+callStack.get(i).getSignature();;
+            for (int i = 1; i < callStack.size(); i++) {
+                String callKind = getCallKind(callStack.get(i));
+                String info = " -> " + callStack.get(i).getSignature() + " [" + callKind + "]";
                 out.write(info);
                 out.write("\n");
 
@@ -131,7 +139,7 @@ public class DataSaveLoadUtil {
         }
     }
 
-    public static boolean fileExistOrNot(String filePath){
+    public static boolean fileExistOrNot(String filePath) {
         File file = new File(filePath);
         return file.exists();
     }
@@ -142,34 +150,84 @@ public class DataSaveLoadUtil {
             if (Files.notExists(directoryPath)) {
                 Files.createDirectories(directoryPath);
             }
-        }catch (Exception e){e.printStackTrace();}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         if (fileExistOrNot(filePath))
-            return new FileWriter(filePath,appendFlag);
+            return new FileWriter(filePath, appendFlag);
 
         try {
             File file = new File(filePath);
             boolean fileCreated = file.createNewFile();
-            if (fileCreated){
-                log.info("Created File: "+filePath);
-            }else log.info("Failed to create file: "+filePath);
+            if (fileCreated) {
+                log.info("Created File: " + filePath);
+            } else
+                log.info("Failed to create file: " + filePath);
 
             FileWriter fileWriter = new FileWriter(filePath, appendFlag);
             return fileWriter;
-        }catch (Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
         }
         return null;
     }
 
-    public static void createDir(String targetDir){
+    public static void createDir(String targetDir) {
         Path targetPath = Paths.get(targetDir);
-        if (!Files.exists(targetPath)){
+        if (!Files.exists(targetPath)) {
             try {
                 Files.createDirectories(targetPath);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    /**
+     * 获取方法调用的类型（call kind）
+     * 
+     * @param sootMethod 调用的方法
+     * @return 调用类型字符串
+     */
+    public static String getCallKind(SootMethod sootMethod) {
+        if (sootMethod == null) {
+            return "UNKNOWN";
+        }
+
+        // 根据方法的特性判断调用类型
+        if (sootMethod.isStatic()) {
+            return "STATIC";
+        } else if (sootMethod.isConstructor()) {
+            return "SPECIAL"; // 构造函数调用
+        } else if (sootMethod.getDeclaringClass().isInterface()) {
+            return "INTERFACE";
+        } else {
+            return "VIRTUAL";
+        }
+    }
+
+    /**
+     * 根据InvokeExpr获取精确的调用类型
+     * 
+     * @param invokeExpr 调用表达式
+     * @return 调用类型字符串
+     */
+    public static String getCallKindFromInvokeExpr(InvokeExpr invokeExpr) {
+        if (invokeExpr == null) {
+            return "UNKNOWN";
+        }
+
+        if (invokeExpr instanceof StaticInvokeExpr) {
+            return "STATIC";
+        } else if (invokeExpr instanceof SpecialInvokeExpr) {
+            return "SPECIAL";
+        } else if (invokeExpr instanceof InterfaceInvokeExpr) {
+            return "INTERFACE";
+        } else if (invokeExpr instanceof VirtualInvokeExpr) {
+            return "VIRTUAL";
+        } else {
+            return "UNKNOWN";
         }
     }
 }

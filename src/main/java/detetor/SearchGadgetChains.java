@@ -262,7 +262,7 @@ public class SearchGadgetChains {
         LinkedList<SootMethod> callStack = new LinkedList<>();
         callStack.add(headMtd);
 
-        // 展开数据流嗖嗖
+        // 展开数据流搜索
         try {
             new TimeOutTask() {
                 @Override
